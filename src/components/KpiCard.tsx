@@ -1,36 +1,50 @@
+const COLOR_MAP: Record<string, string> = {
+  blue:   'var(--navy-400)',
+  green:  'var(--success-500)',
+  red:    'var(--error-500)',
+  yellow: '#d97706',
+  orange: '#ea580c',
+  purple: '#7c3aed',
+  gold:   'var(--gold-500)',
+}
+
 interface Props {
   label: string
   value: string | number
   sub?: string
-  color?: 'blue' | 'green' | 'red' | 'yellow' | 'orange' | 'purple'
+  color?: 'blue' | 'green' | 'red' | 'yellow' | 'orange' | 'purple' | 'gold'
   icon?: string
+  onClick?: () => void
 }
 
-const C = {
-  blue:   { top: 'border-t-blue-500',    ib: 'bg-blue-50',    it: 'text-blue-500' },
-  green:  { top: 'border-t-emerald-500', ib: 'bg-emerald-50', it: 'text-emerald-600' },
-  red:    { top: 'border-t-red-500',     ib: 'bg-red-50',     it: 'text-red-500' },
-  yellow: { top: 'border-t-amber-400',   ib: 'bg-amber-50',   it: 'text-amber-600' },
-  orange: { top: 'border-t-orange-500',  ib: 'bg-orange-50',  it: 'text-orange-500' },
-  purple: { top: 'border-t-violet-500',  ib: 'bg-violet-50',  it: 'text-violet-600' },
-}
+export default function KpiCard({ label, value, sub, color = 'blue', icon, onClick }: Props) {
+  const borderColor = COLOR_MAP[color] ?? COLOR_MAP.blue
 
-export default function KpiCard({ label, value, sub, color = 'blue', icon }: Props) {
-  const s = C[color]
+  // Si el valor sigue el patrón "$número unidad" (ej. "$1.2 Miles M CLP"),
+  // muestra el número en grande y la unidad en pequeño debajo.
+  const valStr = value != null ? String(value) : '—'
+  const split  = valStr.match(/^(\$[\d.,]+)\s(.+)$/)
+
   return (
-    <div className={`bg-white rounded-xl shadow-sm border-t-4 ${s.top} p-4 hover:shadow-md transition-shadow duration-150`}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 leading-none">{label}</p>
-          <p className="text-[1.55rem] font-bold text-gray-800 mt-1.5 leading-none tabular-nums">{value}</p>
-          {sub && <p className="text-[11px] text-gray-400 mt-1.5 leading-snug">{sub}</p>}
-        </div>
-        {icon && (
-          <div className={`shrink-0 w-9 h-9 rounded-lg ${s.ib} flex items-center justify-center text-base ${s.it}`}>
-            {icon}
-          </div>
-        )}
-      </div>
+    <div
+      className="kpi-card"
+      style={{ borderLeftColor: borderColor, cursor: onClick ? 'pointer' : 'default' }}
+      onClick={onClick}
+    >
+      <span>{label}</span>
+      {split ? (
+        <strong style={{ color: borderColor }}>
+          {split[1]}
+          <em style={{ display: 'block', fontSize: 11, fontWeight: 600, fontStyle: 'normal',
+                        color: 'var(--gray-400)', letterSpacing: '.2px', marginTop: 2, lineHeight: 1 }}>
+            {split[2]}
+          </em>
+        </strong>
+      ) : (
+        <strong style={{ color: borderColor }}>{valStr}</strong>
+      )}
+      {sub  && <small>{sub}</small>}
+      {icon && <small style={{ fontSize: 18, marginTop: 4, display: 'block', lineHeight: 1 }}>{icon}</small>}
     </div>
   )
 }

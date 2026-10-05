@@ -11,6 +11,10 @@ import SourcingPlan from './pages/SourcingPlan'
 import CargaDatos from './pages/CargaDatos'
 import EstadoProyectos from './pages/EstadoProyectos'
 import MetrosPerforados from './pages/MetrosPerforados'
+import Modificaciones from './pages/Modificaciones'
+import DashboardDPO from './pages/DashboardDPO'
+import SolpeTiempos from './pages/SolpeTiempos'
+import Simulacion from './pages/Simulacion'
 
 export default function App() {
   return (
@@ -24,10 +28,13 @@ export default function App() {
           <Route path="sourcing"      element={<SourcingPlan />} />
           <Route path="licitaciones"  element={<Licitaciones />} />
           <Route path="alertas"       element={<Alertas />} />
-          <Route path="simulacion"    element={<Placeholder title="Simulación What-If" />} />
+          <Route path="simulacion"    element={<Simulacion />} />
           <Route path="carga"            element={<CargaDatos />} />
           <Route path="estado-proyectos"  element={<EstadoProyectos />} />
           <Route path="metros"            element={<MetrosPerforados />} />
+          <Route path="modificaciones"    element={<Modificaciones />} />
+          <Route path="dashboard-dpo"     element={<DashboardDPO />} />
+          <Route path="dashboard-dab"    element={<SolpeTiempos />} />
         </Route>
       </Routes>
     </BrowserRouter>
