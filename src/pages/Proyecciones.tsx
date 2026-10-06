@@ -6,58 +6,72 @@ import {
 import axios from 'axios'
 import PageHeader from '../components/PageHeader'
 import KpiCard from '../components/KpiCard'
-import { uploadProyeccionesPyC } from '../api/client'
+import { uploadProyeccionesPyC, getPycTimeline } from '../api/client'
 
 const api   = axios.create({ baseURL: '/api' })
 const mmclp = (v: number) => `$${(v / 1e9).toFixed(2)} MM`
 const clp   = (v: number) =>
   new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(v)
 
+// ── timeline helpers ──────────────────────────────────────────────────────────
+
+const MESES_ABR = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']
+const fmtMes = (m: string) => {
+  const [y, mo] = m.split('-')
+  return `${MESES_ABR[parseInt(mo) - 1]}-${y.slice(2)}`
+}
+const fmtMM = (v: number): string => {
+  if (!v || !isFinite(v)) return '—'
+  const abs = Math.abs(v), s = v < 0 ? '−' : ''
+  if (abs >= 1e9) return `${s}$${(abs / 1e9).toFixed(1)}MM`
+  if (abs >= 1e6) return `${s}$${(abs / 1e6).toFixed(0)}M`
+  if (abs >= 1e3) return `${s}$${(abs / 1e3).toFixed(0)}K`
+  return `${s}$${abs.toFixed(0)}`
+}
+
+const TL_STICKY = [
+  { label: 'Contrato',      left: 0,   minW: 185 },
+  { label: 'Total futuro',  left: 185, minW: 90  },
+]
+
+// mi: column index, ultimoEpIdx: global last-EP column index
+function cellBgPyC(mi: number, ultimoEpIdx: number): React.CSSProperties {
+  if (mi === ultimoEpIdx) return { background: '#bfdbfe', color: '#1e40af', borderLeft: '2px solid #93c5fd' }
+  if (mi < ultimoEpIdx)  return { background: '#fefce8', color: '#92400e' }  // amarillo — pasado con EP
+  return { background: '#f3f4f6', color: '#6b7280' }                          // gris — proyectado
+}
+
+// ── upload zone ───────────────────────────────────────────────────────────────
+
 type Status = { disponible: boolean; mensaje?: string; ultima_carga?: string; periodo_max?: string }
 
 function UploadZone({ onSuccess }: { onSuccess: () => void }) {
-  const inputRef                          = useRef<HTMLInputElement>(null)
-  const [uploading, setUploading]         = useState(false)
-  const [result,    setResult]            = useState<any>(null)
-  const [error,     setError]             = useState<string | null>(null)
+  const inputRef                  = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState(false)
+  const [result,    setResult]    = useState<any>(null)
+  const [error,     setError]     = useState<string | null>(null)
 
   const handleFile = async (file: File) => {
-    if (!file.name.endsWith('.parquet')) {
-      setError('El archivo debe ser .parquet')
-      return
-    }
-    setUploading(true)
-    setError(null)
-    setResult(null)
+    if (!file.name.endsWith('.parquet')) { setError('El archivo debe ser .parquet'); return }
+    setUploading(true); setError(null); setResult(null)
     try {
       const res = await uploadProyeccionesPyC(file)
-      setResult(res)
-      onSuccess()
+      setResult(res); onSuccess()
     } catch (e: any) {
       setError(e?.response?.data?.detail ?? 'Error al cargar el archivo')
-    } finally {
-      setUploading(false)
-    }
-  }
-
-  const onDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    const file = e.dataTransfer.files[0]
-    if (file) handleFile(file)
+    } finally { setUploading(false) }
   }
 
   return (
     <div className="space-y-3">
       <div
-        onDrop={onDrop}
+        onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f) }}
         onDragOver={e => e.preventDefault()}
         onClick={() => inputRef.current?.click()}
         className="border-2 border-dashed border-blue-200 rounded-xl p-8 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50/40 transition-colors"
       >
-        <input
-          ref={inputRef} type="file" accept=".parquet" className="hidden"
-          onChange={e => e.target.files?.[0] && handleFile(e.target.files[0])}
-        />
+        <input ref={inputRef} type="file" accept=".parquet" className="hidden"
+          onChange={e => e.target.files?.[0] && handleFile(e.target.files[0])} />
         {uploading ? (
           <div className="space-y-2">
             <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto" />
@@ -71,7 +85,6 @@ function UploadZone({ onSuccess }: { onSuccess: () => void }) {
           </div>
         )}
       </div>
-
       {result && (
         <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-sm text-green-800 space-y-1">
           <p className="font-semibold">Carga exitosa</p>
@@ -81,21 +94,20 @@ function UploadZone({ onSuccess }: { onSuccess: () => void }) {
           )}
         </div>
       )}
-
-      {error && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
-          {error}
-        </div>
-      )}
+      {error && <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">{error}</div>}
     </div>
   )
 }
 
+// ── página ────────────────────────────────────────────────────────────────────
+
 export default function Proyecciones() {
-  const [status, setStatus] = useState<Status | null>(null)
-  const [kpis,   setKpis]   = useState<any>(null)
-  const [porMes, setPorMes] = useState<any[]>([])
-  const [tabla,  setTabla]  = useState<any[]>([])
+  const [status,        setStatus]        = useState<Status | null>(null)
+  const [kpis,          setKpis]          = useState<any>(null)
+  const [porMes,        setPorMes]        = useState<any[]>([])
+  const [tabla,         setTabla]         = useState<any[]>([])
+  const [timeline,      setTimeline]      = useState<any>(null)
+  const [tlLoading,     setTlLoading]     = useState(true)
   const [filtroPeriodo, setFiltroPeriodo] = useState('')
   const [filtroTipo,    setFiltroTipo]    = useState('')
   const [showUpload,    setShowUpload]    = useState(false)
@@ -106,6 +118,11 @@ export default function Proyecciones() {
       if (r.data.disponible) {
         api.get('/proyecciones/kpis').then(r2 => setKpis(r2.data))
         api.get('/proyecciones/por-mes').then(r2 => setPorMes(r2.data))
+        setTlLoading(true)
+        getPycTimeline({ limite: 20 })
+          .then(setTimeline)
+          .catch(() => setTimeline(null))
+          .finally(() => setTlLoading(false))
       }
     })
   }
@@ -134,12 +151,27 @@ export default function Proyecciones() {
     )
   }
 
-  const periodos = [...new Set(porMes.map((r: any) => r.periodo))].sort()
+  const periodos  = [...new Set(porMes.map((r: any) => r.periodo))].sort()
   const chartData = periodos.map(p => {
     const pyc = porMes.find((r: any) => r.periodo === p && r.tipo_proyeccion === 'P&C')?.monto ?? 0
     const adc = porMes.find((r: any) => r.periodo === p && r.tipo_proyeccion === 'AdC')?.monto ?? 0
     return { periodo: p, 'P&C': pyc, AdC: adc, Total: pyc + adc }
   })
+
+  // Índice del último EP para una fila (maneja cuando está fuera del rango visible)
+  const getUltimoEpIdx = (ultimoEp: string | null, meses: string[]): number => {
+    if (!ultimoEp) return -1
+    const idx = meses.indexOf(ultimoEp)
+    if (idx >= 0) return idx
+    // Si está después del último mes visible → todo amarillo
+    if (ultimoEp > meses[meses.length - 1]) return meses.length
+    // Si está antes del primer mes visible → todo gris
+    return -1
+  }
+
+  const tlUltimoEpIdxGlobal = timeline
+    ? getUltimoEpIdx(timeline.ultimo_ep ?? null, timeline.meses)
+    : -1
 
   return (
     <div>
@@ -164,8 +196,183 @@ export default function Proyecciones() {
         </button>
       </div>
 
+      {/* ── Timeline de Proyecciones ─────────────────────────────────────── */}
+      <div className="px-4 pb-4">
+        <div className="panel" style={{ padding: 0 }}>
+
+          {/* Cabecera */}
+          <div style={{
+            padding: '10px 16px',
+            borderBottom: '1px solid var(--gray-200)',
+            display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+          }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--navy-500)' }}>
+              Proyección mensual por contrato (Top 20)
+            </span>
+            {timeline && (
+              <span style={{ fontSize: 11, color: '#9aa1b3' }}>
+                {timeline.contratos.length} contratos · ordenados por monto futuro
+              </span>
+            )}
+
+            {/* Leyenda */}
+            <div style={{ display: 'flex', gap: 8, marginLeft: 'auto', alignItems: 'center' }}>
+              {[
+                { bg: '#fefce8', bd: '#fde68a', label: 'Con EP'      },
+                { bg: '#bfdbfe', bd: '#93c5fd', label: 'Último EP'   },
+                { bg: '#f3f4f6', bd: '#e5e7eb', label: 'Proyectado'  },
+              ].map(({ bg, bd, label }) => (
+                <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 10, color: '#9aa1b3' }}>
+                  <span style={{ width: 11, height: 11, background: bg, border: `1px solid ${bd}`, borderRadius: 2, display: 'inline-block' }} />
+                  {label}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* Cuerpo */}
+          {tlLoading ? (
+            <div style={{ padding: 20, textAlign: 'center', color: '#9aa1b3', fontSize: 12 }}>
+              Calculando proyección…
+            </div>
+          ) : timeline ? (
+            <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 400 }}>
+              <table style={{ borderCollapse: 'separate', borderSpacing: 0, fontSize: 11 }}>
+                <thead>
+                  <tr>
+                    {/* Columnas fijas */}
+                    {TL_STICKY.map((col, ci) => (
+                      <th key={col.label} style={{
+                        position: 'sticky', top: 0, left: col.left, zIndex: 5,
+                        minWidth: col.minW, padding: '7px 8px',
+                        background: '#f9fafb', whiteSpace: 'nowrap',
+                        borderBottom: '2px solid var(--gray-200)',
+                        textAlign: ci === 1 ? 'right' : 'left',
+                        boxShadow: ci === TL_STICKY.length - 1 ? '3px 0 6px rgba(0,0,0,.07)' : undefined,
+                      }}>
+                        {col.label}
+                      </th>
+                    ))}
+
+                    {/* Columnas de meses */}
+                    {timeline.meses.map((m: string) => (
+                      <th key={m} style={{
+                        position: 'sticky', top: 0, zIndex: 3,
+                        minWidth: 63, padding: '7px 4px',
+                        textAlign: 'center',
+                        background:  m === timeline.mes_actual ? '#bfdbfe' : '#f9fafb',
+                        color:       m === timeline.mes_actual ? '#1e40af' : '#9aa1b3',
+                        fontWeight:  m === timeline.mes_actual ? 700 : 400,
+                        borderBottom: '2px solid var(--gray-200)',
+                        borderLeft:  m === timeline.mes_actual ? '2px solid #93c5fd' : undefined,
+                        whiteSpace: 'nowrap',
+                      }}>
+                        {fmtMes(m)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {timeline.contratos.map((ctt: any) => {
+                    const bd = '1px solid #f0f0f0'
+                    const saldos = ctt.saldos as number[]
+                    const ultimoEpIdx = getUltimoEpIdx(ctt.ultimo_ep ?? null, timeline.meses)
+                    return (
+                      <tr key={ctt.contrato}>
+                        <td style={{
+                          position: 'sticky', left: 0, zIndex: 2,
+                          background: '#fff', padding: '5px 8px',
+                          maxWidth: 185, overflow: 'hidden', textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap', borderBottom: bd,
+                          fontWeight: 600, fontSize: 10,
+                        }} title={ctt.contrato}>
+                          {ctt.contrato}
+                        </td>
+                        <td style={{
+                          position: 'sticky', left: 185, zIndex: 2,
+                          background: '#fff', padding: '5px 8px',
+                          textAlign: 'right', fontVariantNumeric: 'tabular-nums',
+                          fontWeight: 700, color: 'var(--navy-500)',
+                          boxShadow: '3px 0 6px rgba(0,0,0,.07)',
+                          borderBottom: bd,
+                        }}>
+                          {fmtMM(ctt.total_futuro)}
+                        </td>
+                        {timeline.meses.map((m: string, mi: number) => {
+                          const v = saldos[mi]
+                          const cs = cellBgPyC(mi, ultimoEpIdx)
+                          return (
+                            <td key={m} style={{
+                              minWidth: 63, padding: '5px 5px',
+                              textAlign: 'right', fontVariantNumeric: 'tabular-nums',
+                              fontSize: 10, borderBottom: bd,
+                              ...cs,
+                            }}
+                              title={v > 0 ? `${ctt.contrato} · ${m}: ${clp(v)}` : undefined}
+                            >
+                              {v > 0 ? fmtMM(v) : ''}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    )
+                  })}
+
+                  {/* Fila de totales */}
+                  {timeline.totales_mes && (() => {
+                    const tots = timeline.totales_mes as number[]
+                    const totalFuturo = tots.slice(timeline.mes_actual_idx).reduce((a: number, b: number) => a + b, 0)
+                    return (
+                      <tr style={{ borderTop: '2px solid var(--gray-200)', background: '#f9fafb' }}>
+                        <td style={{
+                          position: 'sticky', left: 0, zIndex: 2,
+                          background: '#f9fafb', padding: '5px 8px',
+                          fontWeight: 700, fontSize: 10, color: 'var(--navy-500)',
+                          whiteSpace: 'nowrap',
+                        }}>
+                          Total general
+                        </td>
+                        <td style={{
+                          position: 'sticky', left: 185, zIndex: 2,
+                          background: '#f9fafb', padding: '5px 8px',
+                          textAlign: 'right', fontWeight: 700,
+                          fontVariantNumeric: 'tabular-nums', color: 'var(--navy-500)',
+                          boxShadow: '3px 0 6px rgba(0,0,0,.07)',
+                        }}>
+                          {fmtMM(totalFuturo)}
+                        </td>
+                        {timeline.meses.map((m: string, mi: number) => {
+                          const v = tots[mi] ?? 0
+                          const cs = cellBgPyC(mi, tlUltimoEpIdxGlobal)
+                          return (
+                            <td key={m} style={{
+                              minWidth: 63, padding: '5px 5px',
+                              textAlign: 'right', fontVariantNumeric: 'tabular-nums',
+                              fontSize: 10, fontWeight: 600,
+                              ...cs,
+                            }}>
+                              {v > 0 ? fmtMM(v) : ''}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    )
+                  })()}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div style={{ padding: 16, textAlign: 'center', color: '#9aa1b3', fontSize: 12 }}>
+              No se pudo cargar la proyección.
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── KPIs ─────────────────────────────────────────────────────────────── */}
       {kpis && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 px-4 pb-4">
           <KpiCard label="Total Proyectado"          value={mmclp(kpis.total_proyectado)}       color="blue"   icon="🔮" />
           <KpiCard label="Proyección P&C"            value={mmclp(kpis.total_pyc)}              color="blue"   icon="📊" />
           <KpiCard label="Proyección AdC"            value={mmclp(kpis.total_adc)}              color="orange" icon="📉" />
@@ -173,6 +380,7 @@ export default function Proyecciones() {
         </div>
       )}
 
+      {/* ── Gráfico mensual ───────────────────────────────────────────────────── */}
       <div className="px-4 pb-4">
         <div className="bg-white rounded-xl shadow-sm p-4">
           <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-3">
@@ -183,10 +391,7 @@ export default function Proyecciones() {
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
               <XAxis dataKey="periodo" tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} />
               <YAxis tickFormatter={v => `$${(v / 1e9).toFixed(0)}MM`} tick={{ fontSize: 10, fill: '#6b7280' }} width={62} axisLine={false} tickLine={false} />
-              <Tooltip
-                formatter={(v) => [clp(Number(v)), '']}
-                contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}
-              />
+              <Tooltip formatter={(v) => [clp(Number(v)), '']} contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
               <Bar dataKey="P&C" fill="#1e40af" stackId="a" />
               <Bar dataKey="AdC" fill="#3b82f6" stackId="a" radius={[4, 4, 0, 0]} />
@@ -196,6 +401,7 @@ export default function Proyecciones() {
         </div>
       </div>
 
+      {/* ── Tabla de detalle ─────────────────────────────────────────────────── */}
       <div className="px-4 pb-6">
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
           <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-100">
@@ -231,8 +437,7 @@ export default function Proyecciones() {
               </thead>
               <tbody>
                 {tabla.slice(0, 200).map((r: any, i: number) => (
-                  <tr
-                    key={i}
+                  <tr key={i}
                     className={`border-t border-slate-50 hover:bg-blue-50/30 transition-colors ${i % 2 === 1 ? 'bg-slate-50/30' : ''}`}
                   >
                     <td className="px-3 py-2 font-mono font-semibold text-gray-700">{r.contrato}</td>

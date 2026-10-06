@@ -39,9 +39,9 @@ const fmtMM = (v: number): string => {
   if (abs >= 1e3) return `${s}$${(abs / 1e3).toFixed(0)}K`
   return `${s}$${abs.toFixed(0)}`
 }
-const cellBg = (mi: number, mesActualIdx: number, agotIdx: number | null): string => {
-  if (mi === mesActualIdx) return '#bfdbfe'          // celeste — mes actual
-  if (mi < mesActualIdx)  return '#f0fdf4'           // verde — histórico
+const cellBg = (mi: number, ultimoEpIdx: number, agotIdx: number | null): string => {
+  if (mi === ultimoEpIdx) return '#bfdbfe'           // celeste — último EP
+  if (mi < ultimoEpIdx)   return '#f0fdf4'           // verde — histórico
   if (agotIdx === null)   return '#f0fdf4'           // verde — sin agotamiento
   if (mi >= agotIdx)      return '#fee2e2'           // rojo — sin saldo
   if (mi >= agotIdx - 6)  return '#fef9c3'           // amarillo — ≤6 meses
@@ -89,15 +89,15 @@ export default function SaldoContratos() {
   }, [filters])
 
   useEffect(() => {
-    const active = Object.entries(filters).filter(([, v]) => v)
-    if (active.length === 0) {
-      setTimeline(null)
-      setTimelineLoading(false)
-      return
-    }
     setTimelineLoading(true)
+    const active = Object.entries(filters).filter(([, v]) => v)
     const params: Record<string, string | number> = Object.fromEntries(active)
-    params.limite = 60
+    if (active.length === 0) {
+      params.tipo   = 'Perforación'
+      params.limite = 10
+    } else {
+      params.limite = 60
+    }
     getSaldoTimeline(params)
       .then(setTimeline)
       .catch(() => setTimeline(null))
@@ -145,7 +145,7 @@ export default function SaldoContratos() {
   const hasFilters = Object.values(filters).some(Boolean)
 
   if (!kpis) return (
-    <div className="page" style={{ justifyContent: 'center', alignItems: 'center', color: 'var(--color-text-muted)', fontSize: 13 }}>
+    <div className="page" style={{ justifyContent: 'center', alignItems: 'center', color: '#9aa1b3', fontSize: 13 }}>
       Cargando...
     </div>
   )
@@ -170,7 +170,7 @@ export default function SaldoContratos() {
         {filtros && (
           <div className="filters-bar" style={{ flexWrap: 'wrap', gap: 8 }}>
             <input
-              style={{ flex: '1 1 180px', fontSize: 12, padding: '4px 8px', border: '1px solid var(--color-border)', borderRadius: 4 }}
+              style={{ flex: '1 1 180px', fontSize: 12, padding: '4px 8px', border: '1px solid var(--gray-200)', borderRadius: 4 }}
               placeholder="Buscar contrato o descripción…"
               value={filters.contrato}
               onChange={e => setFilter('contrato', e.target.value)}
@@ -187,7 +187,7 @@ export default function SaldoContratos() {
                   key={key}
                   value={(filters as any)[key]}
                   onChange={e => setFilter(key, e.target.value)}
-                  style={{ fontSize: 12, padding: '4px 8px', border: '1px solid var(--color-border)', borderRadius: 4 }}
+                  style={{ fontSize: 12, padding: '4px 8px', border: '1px solid var(--gray-200)', borderRadius: 4 }}
                 >
                   <option value="">— {label} —</option>
                   {opts.map((o: string) => <option key={o} value={o}>{o}</option>)}
@@ -200,26 +200,26 @@ export default function SaldoContratos() {
                 ✕ Limpiar
               </button>
             )}
-            <span style={{ fontSize: 12, color: 'var(--color-text-muted)', marginLeft: 'auto' }}>
+            <span style={{ fontSize: 12, color: '#9aa1b3', marginLeft: 'auto' }}>
               {contratos.length} contratos
             </span>
           </div>
         )}
 
         {/* ── Timeline de Saldo ─────────────────────────────────────────────── */}
-        <div className="panel" style={{ padding: 0, overflow: 'hidden' }}>
+        <div className="panel" style={{ padding: 0 }}>
 
           {/* Cabecera del panel */}
           <div style={{
             padding: '10px 16px',
-            borderBottom: '1px solid var(--color-border)',
+            borderBottom: '1px solid var(--gray-200)',
             display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
           }}>
             <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--navy-500)' }}>
               Proyección de Saldo por Contrato
             </span>
             {timeline && (
-              <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
+              <span style={{ fontSize: 11, color: '#9aa1b3' }}>
                 {tlContratos.length < (timeline.total_contratos ?? timeline.contratos.length)
                   ? `${tlContratos.length} de ${timeline.total_contratos ?? timeline.contratos.length} contratos (ordenados por criticidad)`
                   : `${tlContratos.length} contratos`}
@@ -230,12 +230,12 @@ export default function SaldoContratos() {
             {/* Leyenda */}
             <div style={{ display: 'flex', gap: 10, marginLeft: 'auto', flexWrap: 'wrap', alignItems: 'center' }}>
               {[
-                { bg: '#f0fdf4', bd: '#bbf7d0', label: 'Sin riesgo'   },
-                { bg: '#bfdbfe', bd: '#93c5fd', label: 'Mes actual'   },
-                { bg: '#fef9c3', bd: '#fde68a', label: '≤6 meses'     },
-                { bg: '#fee2e2', bd: '#fca5a5', label: 'Sin saldo'    },
+                { bg: '#f0fdf4', bd: '#bbf7d0', label: 'Sin riesgo'  },
+                { bg: '#bfdbfe', bd: '#93c5fd', label: 'Último EP'   },
+                { bg: '#fef9c3', bd: '#fde68a', label: '≤6 meses'    },
+                { bg: '#fee2e2', bd: '#fca5a5', label: 'Sin saldo'   },
               ].map(({ bg, bd, label }) => (
-                <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 10, color: 'var(--color-text-muted)' }}>
+                <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 10, color: '#9aa1b3' }}>
                   <span style={{ width: 11, height: 11, background: bg, border: `1px solid ${bd}`, borderRadius: 2, display: 'inline-block', flexShrink: 0 }} />
                   {label}
                 </span>
@@ -258,16 +258,12 @@ export default function SaldoContratos() {
           </div>
 
           {/* Cuerpo */}
-          {!hasFilters ? (
-            <div style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: 12 }}>
-              Selecciona un contrato o aplica algún filtro para ver la proyección de saldo
-            </div>
-          ) : timelineLoading ? (
-            <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: 12 }}>
+          {timelineLoading ? (
+            <div style={{ padding: '20px', textAlign: 'center', color: '#9aa1b3', fontSize: 12 }}>
               Calculando proyección de saldo…
             </div>
           ) : timeline ? (
-            <div style={{ overflowX: 'auto' }}>
+            <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 380 }}>
               <table style={{ borderCollapse: 'separate', borderSpacing: 0, fontSize: 11 }}>
                 <thead>
                   <tr>
@@ -275,10 +271,10 @@ export default function SaldoContratos() {
                     {TL_STICKY.map((col, ci) => (
                       <th key={col.label}
                         style={{
-                          position: 'sticky', left: col.left, zIndex: 4,
+                          position: 'sticky', top: 0, left: col.left, zIndex: 5,
                           minWidth: col.minW, padding: '7px 8px',
                           background: '#f9fafb', whiteSpace: 'nowrap',
-                          borderBottom: '2px solid var(--color-border)',
+                          borderBottom: '2px solid var(--gray-200)',
                           textAlign: col.align,
                           boxShadow: ci === TL_STICKY.length - 1
                             ? '3px 0 6px rgba(0,0,0,.07)' : undefined,
@@ -292,12 +288,13 @@ export default function SaldoContratos() {
                     {timeline.meses.map((m: string) => (
                       <th key={m}
                         style={{
+                          position: 'sticky', top: 0, zIndex: 3,
                           minWidth: 63, padding: '7px 4px',
                           textAlign: 'center',
                           background:  m === timeline.mes_actual ? '#bfdbfe' : '#f9fafb',
-                          color:       m === timeline.mes_actual ? '#1e40af' : 'var(--color-text-muted)',
+                          color:       m === timeline.mes_actual ? '#1e40af' : '#9aa1b3',
                           fontWeight:  m === timeline.mes_actual ? 700 : 400,
-                          borderBottom: '2px solid var(--color-border)',
+                          borderBottom: '2px solid var(--gray-200)',
                           borderLeft:  m === timeline.mes_actual ? '2px solid #93c5fd' : undefined,
                           whiteSpace: 'nowrap',
                         }}
@@ -310,9 +307,12 @@ export default function SaldoContratos() {
 
                 <tbody>
                   {tlContratos.map((ctt: any) => {
-                    const agotIdx = ctt.mes_agotamiento
+                    const agotIdx    = ctt.mes_agotamiento
                       ? timeline.meses.indexOf(ctt.mes_agotamiento)
                       : null
+                    const ultimoEpIdx = ctt.ultimo_ep
+                      ? timeline.meses.indexOf(ctt.ultimo_ep)
+                      : -1
                     const bd = '1px solid #f0f0f0'
 
                     return (
@@ -327,7 +327,7 @@ export default function SaldoContratos() {
                           {ctt.descripcion}
                         </td>
                         {/* Área */}
-                        <td style={{ position: 'sticky', left: 239, zIndex: 2, background: '#fff', padding: '5px 8px', fontSize: 10, color: 'var(--color-text-muted)', borderBottom: bd }}>
+                        <td style={{ position: 'sticky', left: 239, zIndex: 2, background: '#fff', padding: '5px 8px', fontSize: 10, color: '#9aa1b3', borderBottom: bd }}>
                           {ctt.area}
                         </td>
                         {/* Presupuesto */}
@@ -357,7 +357,7 @@ export default function SaldoContratos() {
                               {fmtMes(ctt.mes_agotamiento)}
                             </span>
                           ) : (
-                            <span style={{ fontSize: 10, color: ctt.tiene_proyeccion ? '#16a34a' : 'var(--color-text-muted)' }}>
+                            <span style={{ fontSize: 10, color: ctt.tiene_proyeccion ? '#16a34a' : '#9aa1b3' }}>
                               {ctt.tiene_proyeccion ? 'Sin límite' : 'Sin P&C'}
                             </span>
                           )}
@@ -373,12 +373,12 @@ export default function SaldoContratos() {
                                 textAlign: 'right',
                                 fontVariantNumeric: 'tabular-nums',
                                 fontSize: 10,
-                                background: cellBg(mi, timeline.mes_actual_idx, agotIdx),
+                                background: cellBg(mi, ultimoEpIdx, agotIdx),
                                 color: saldo < 0
                                   ? '#dc2626'
                                   : saldo < ctt.presupuesto * 0.05 ? '#b45309'
                                   : undefined,
-                                borderLeft:   m === timeline.mes_actual ? '2px solid #93c5fd' : undefined,
+                                borderLeft:   m === ctt.ultimo_ep ? '2px solid #93c5fd' : undefined,
                                 borderBottom: bd,
                               }}
                               title={`${ctt.codigo_ctt} · ${m}: ${clp(saldo)}`}
@@ -395,7 +395,7 @@ export default function SaldoContratos() {
                     <tr>
                       <td
                         colSpan={TL_STICKY.length + (timeline?.meses.length ?? 0)}
-                        style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: 12 }}
+                        style={{ padding: '20px', textAlign: 'center', color: '#9aa1b3', fontSize: 12 }}
                       >
                         Sin contratos con los filtros seleccionados.
                       </td>
@@ -405,7 +405,7 @@ export default function SaldoContratos() {
               </table>
             </div>
           ) : (
-            <div style={{ padding: '16px', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: 12 }}>
+            <div style={{ padding: '16px', textAlign: 'center', color: '#9aa1b3', fontSize: 12 }}>
               No se pudo cargar la proyección.
             </div>
           )}
@@ -444,9 +444,9 @@ export default function SaldoContratos() {
                       <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{c.codigo_ctt}</td>
                       <td style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                         title={c.Descripcion_ctt}>{c.Descripcion_ctt}</td>
-                      <td style={{ fontSize: 11, color: 'var(--color-text-muted)', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                      <td style={{ fontSize: 11, color: '#9aa1b3', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                         title={c.alcance}>{c.alcance || '—'}</td>
-                      <td style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{c.Area_contrato}</td>
+                      <td style={{ fontSize: 11, color: '#9aa1b3' }}>{c.Area_contrato}</td>
                       <td>
                         <span className={`chip ${c.Estado_ctt === 'Vigente' ? 'ok' : 'warn'}`}>
                           {c.Estado_ctt}
@@ -465,7 +465,7 @@ export default function SaldoContratos() {
                             background: ESTADO_COLOR[c.Estado_Saldo],
                           }} />
                         </div>
-                        <span style={{ fontSize: 11, fontVariantNumeric: 'tabular-nums', color: 'var(--color-text-muted)' }}>
+                        <span style={{ fontSize: 11, fontVariantNumeric: 'tabular-nums', color: '#9aa1b3' }}>
                           {(c.Pct_Saldo * 100).toFixed(1)}%
                         </span>
                       </td>
@@ -523,7 +523,7 @@ export default function SaldoContratos() {
         {evolucion.length > 0 && (
           <div className="panel">
             <h2>Evolución del EP consumido acumulado</h2>
-            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 12 }}>
+            <p style={{ fontSize: 12, color: '#9aa1b3', marginBottom: 12 }}>
               EP acumulado mes a mes en todos los contratos
             </p>
             <ResponsiveContainer width="100%" height={260}>

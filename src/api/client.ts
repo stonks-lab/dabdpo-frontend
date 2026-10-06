@@ -26,6 +26,8 @@ export const getAnalisisKpis          = ()            => api.get('/analisis/kpis
 export const getAnalisisPorProyecto   = ()            => api.get('/analisis/por-proyecto').then(r => r.data)
 export const getAnalisisTabla         = (p: object)   => api.get('/analisis/tabla', { params: p }).then(r => r.data)
 
+export const getPycTimeline            = (p?: object) => api.get('/proyecciones/timeline', { params: p }).then(r => r.data)
+
 export const getSourcingKpis          = ()            => api.get('/sourcing/kpis').then(r => r.data)
 export const getSourcingPorMes        = ()            => api.get('/sourcing/por-mes').then(r => r.data)
 export const getSourcingPorEstatus    = ()            => api.get('/sourcing/por-estatus').then(r => r.data)
