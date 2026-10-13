@@ -13,7 +13,7 @@ export const MODULOS: ModuloDef[] = [
   {
     id: 'estrategia',
     label: 'Estrategia',
-    rutas: ['/saldo', '/proyecciones', '/analisis', '/sourcing', '/simulacion'],
+    rutas: ['/saldo', '/estados-pago', '/proyecciones', '/analisis', '/sourcing', '/simulacion'],
   },
   {
     id: 'operatividad',

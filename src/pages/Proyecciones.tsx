@@ -4,9 +4,10 @@ import {
   ResponsiveContainer, Legend, CartesianGrid,
 } from 'recharts'
 import axios from 'axios'
+import * as XLSX from 'xlsx'
 import PageHeader from '../components/PageHeader'
 import KpiCard from '../components/KpiCard'
-import { uploadProyeccionesPyC, getPycTimeline } from '../api/client'
+import { uploadProyeccionesPyC, getPycTimeline, getPycComparacion } from '../api/client'
 
 const api   = axios.create({ baseURL: '/api' })
 const mmclp = (v: number) => `$${(v / 1e9).toFixed(2)} MM`
@@ -80,7 +81,7 @@ function UploadZone({ onSuccess }: { onSuccess: () => void }) {
         ) : (
           <div className="space-y-2">
             <p className="text-2xl">📂</p>
-            <p className="text-sm font-semibold text-gray-700">Arrastrá el archivo .parquet o hacé clic para seleccionarlo</p>
+            <p className="text-sm font-semibold text-gray-700">Arrasta el archivo .parquet o hace clic para seleccionarlo</p>
             <p className="text-xs text-gray-400">Solo archivos .parquet exportados desde P&C</p>
           </div>
         )}
@@ -108,9 +109,18 @@ export default function Proyecciones() {
   const [tabla,         setTabla]         = useState<any[]>([])
   const [timeline,      setTimeline]      = useState<any>(null)
   const [tlLoading,     setTlLoading]     = useState(true)
-  const [filtroPeriodo, setFiltroPeriodo] = useState('')
-  const [filtroTipo,    setFiltroTipo]    = useState('')
-  const [showUpload,    setShowUpload]    = useState(false)
+  const [filtroContrato,  setFiltroContrato]  = useState('')
+  const [filtroProyecto,  setFiltroProyecto]  = useState('')
+  const [filtroPeriodo,   setFiltroPeriodo]   = useState('')
+  const [filtroPeriodoH,  setFiltroPeriodoH]  = useState('')
+  const [filtroTipo,      setFiltroTipo]      = useState('')
+  const [showUpload,      setShowUpload]      = useState(false)
+  const [tlTipo,          setTlTipo]          = useState<'' | 'P&C' | 'AdC'>('P&C')
+  const [comparacion,     setComparacion]     = useState<any[]>([])
+  const [cmpContrato,     setCmpContrato]     = useState('')
+  const [cmpProyecto,     setCmpProyecto]     = useState('')
+  const [sortCol,  setSortCol]  = useState<string>('contrato')
+  const [sortDir,  setSortDir]  = useState<'asc' | 'desc'>('asc')
 
   const reload = () => {
     api.get('/proyecciones/status').then(r => {
@@ -119,7 +129,7 @@ export default function Proyecciones() {
         api.get('/proyecciones/kpis').then(r2 => setKpis(r2.data))
         api.get('/proyecciones/por-mes').then(r2 => setPorMes(r2.data))
         setTlLoading(true)
-        getPycTimeline({ limite: 20 })
+        getPycTimeline({ limite: 20, ...(tlTipo ? { tipo: tlTipo } : {}) })
           .then(setTimeline)
           .catch(() => setTimeline(null))
           .finally(() => setTlLoading(false))
@@ -131,18 +141,38 @@ export default function Proyecciones() {
 
   useEffect(() => {
     if (!status?.disponible) return
+    setTlLoading(true)
+    getPycTimeline({ limite: 20, ...(tlTipo ? { tipo: tlTipo } : {}) })
+      .then(setTimeline)
+      .catch(() => setTimeline(null))
+      .finally(() => setTlLoading(false))
+  }, [tlTipo])
+
+  useEffect(() => {
+    if (!status?.disponible) return
+    const p: any = {}
+    if (cmpContrato) p.contrato = cmpContrato
+    if (cmpProyecto) p.proyecto = cmpProyecto
+    getPycComparacion(p).then(setComparacion).catch(() => setComparacion([]))
+  }, [status, cmpContrato, cmpProyecto])
+
+  useEffect(() => {
+    if (!status?.disponible) return
     const params: any = {}
-    if (filtroPeriodo) params.periodo_desde = filtroPeriodo
-    if (filtroTipo)    params.tipo = filtroTipo
+    if (filtroContrato) params.contrato      = filtroContrato
+    if (filtroProyecto) params.proyecto      = filtroProyecto
+    if (filtroPeriodo)  params.periodo_desde = filtroPeriodo
+    if (filtroPeriodoH) params.periodo_hasta = filtroPeriodoH
+    if (filtroTipo)     params.tipo          = filtroTipo
     api.get('/proyecciones/tabla', { params }).then(r => setTabla(r.data))
-  }, [status, filtroPeriodo, filtroTipo])
+  }, [status, filtroContrato, filtroProyecto, filtroPeriodo, filtroPeriodoH, filtroTipo])
 
   if (!status) return <div className="p-6 text-gray-400 text-sm">Cargando...</div>
 
   if (!status.disponible) {
     return (
-      <div>
-        <PageHeader title="Proyecciones P&C" subtitle="Cargá el archivo .parquet para ver los datos" icon="📈" />
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+        <PageHeader title="Proyecciones" subtitle="Cargá el archivo .parquet para ver los datos" icon="📈" />
         <div className="m-6 max-w-lg">
           <p className="text-sm text-gray-500 mb-4">Sin datos cargados aún. Subí el archivo .parquet exportado por el equipo de P&C.</p>
           <UploadZone onSuccess={() => { setTimeout(reload, 500) }} />
@@ -150,6 +180,20 @@ export default function Proyecciones() {
       </div>
     )
   }
+
+  const toggleSort = (col: string) => {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortCol(col); setSortDir('asc') }
+  }
+
+  const tablaOrdenada = [...tabla].sort((a, b) => {
+    const va = a[sortCol] ?? ''
+    const vb = b[sortCol] ?? ''
+    const cmp = typeof va === 'number' && typeof vb === 'number'
+      ? va - vb
+      : String(va).localeCompare(String(vb), 'es', { numeric: true })
+    return sortDir === 'asc' ? cmp : -cmp
+  })
 
   const periodos  = [...new Set(porMes.map((r: any) => r.periodo))].sort()
   const chartData = periodos.map(p => {
@@ -173,10 +217,22 @@ export default function Proyecciones() {
     ? getUltimoEpIdx(timeline.ultimo_ep ?? null, timeline.meses)
     : -1
 
+  const exportTimeline = () => {
+    if (!timeline) return
+    const headers = ['Contrato', 'Total Futuro', ...timeline.meses]
+    const rows = timeline.contratos.map((c: any) => [
+      c.contrato, c.total_futuro, ...c.saldos,
+    ])
+    const wb = XLSX.utils.book_new()
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows])
+    XLSX.utils.book_append_sheet(wb, ws, 'Proyección')
+    XLSX.writeFile(wb, 'proyeccion_mensual.xlsx')
+  }
+
   return (
-    <div>
+    <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
       <PageHeader
-        title="Proyecciones P&C"
+        title="Proyecciones"
         subtitle={`Última carga: ${kpis?.ultima_carga?.split('T')[0] ?? '—'} · hasta ${kpis?.periodo_max ?? '—'}`}
         icon="📈"
       />
@@ -194,6 +250,32 @@ export default function Proyecciones() {
         >
           {showUpload ? 'Cancelar' : 'Actualizar datos'}
         </button>
+      </div>
+
+      {/* ── Filtros ─────────────────────────────────────────────────────────── */}
+      <div className="filters-bar px-4 pb-3" style={{ flexWrap: 'wrap', gap: 8 }}>
+        <input
+          type="text" placeholder="Buscar contrato…" value={filtroContrato}
+          onChange={e => setFiltroContrato(e.target.value)}
+          style={{ flex: '1 1 160px', fontSize: 12, padding: '4px 8px', border: '1px solid var(--gray-200)', borderRadius: 4 }}
+        />
+        <input
+          type="text" placeholder="Proyecto / ID_BLANCO…" value={filtroProyecto}
+          onChange={e => setFiltroProyecto(e.target.value)}
+          style={{ flex: '1 1 180px', fontSize: 12, padding: '4px 8px', border: '1px solid var(--gray-200)', borderRadius: 4 }}
+        />
+        <select value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)}
+          style={{ fontSize: 12, padding: '4px 8px', border: '1px solid var(--gray-200)', borderRadius: 4 }}>
+          <option value="">— Tipo —</option>
+          <option value="P&C">P&C</option>
+          <option value="AdC">AdC</option>
+        </select>
+        {(filtroContrato || filtroProyecto || filtroPeriodo || filtroPeriodoH || filtroTipo) && (
+          <button className="btn btn-ghost" style={{ fontSize: 12 }}
+            onClick={() => { setFiltroContrato(''); setFiltroProyecto(''); setFiltroPeriodo(''); setFiltroPeriodoH(''); setFiltroTipo('') }}>
+            ✕ Limpiar
+          </button>
+        )}
       </div>
 
       {/* ── Timeline de Proyecciones ─────────────────────────────────────── */}
@@ -214,6 +296,31 @@ export default function Proyecciones() {
                 {timeline.contratos.length} contratos · ordenados por monto futuro
               </span>
             )}
+            <button
+              className="btn btn-ghost"
+              style={{ fontSize: 11, padding: '2px 9px' }}
+              onClick={exportTimeline}
+              title="Descargar Excel"
+              disabled={!timeline}
+            >⬇ Excel</button>
+
+            {/* Selector tipo */}
+            <div style={{ display: 'flex', gap: 2, background: 'var(--gray-100)', borderRadius: 8, padding: 2 }}>
+              {([['P&C', 'P&C'], ['AdC', 'AdC'], ['', 'P&C + AdC']] as [string, string][]).map(([val, label]) => (
+                <button
+                  key={val}
+                  onClick={() => setTlTipo(val as '' | 'P&C' | 'AdC')}
+                  style={{
+                    fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 6, border: 'none',
+                    cursor: 'pointer', transition: 'all .15s',
+                    background: tlTipo === val ? 'var(--navy-500)' : 'transparent',
+                    color:      tlTipo === val ? '#fff'             : 'var(--gray-500)',
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
 
             {/* Leyenda */}
             <div style={{ display: 'flex', gap: 8, marginLeft: 'auto', alignItems: 'center' }}>
@@ -387,31 +494,136 @@ export default function Proyecciones() {
             Proyección mensual P&C vs AdC (MM CLP)
           </h2>
           <ResponsiveContainer width="100%" height={280}>
-            <ComposedChart data={chartData}>
+            <ComposedChart data={chartData} barCategoryGap="25%">
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
               <XAxis dataKey="periodo" tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} />
               <YAxis tickFormatter={v => `$${(v / 1e9).toFixed(0)}MM`} tick={{ fontSize: 10, fill: '#6b7280' }} width={62} axisLine={false} tickLine={false} />
-              <Tooltip formatter={(v) => [clp(Number(v)), '']} contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }} />
+              <Tooltip formatter={(v, name) => [clp(Number(v)), name]} contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="P&C" fill="#1e40af" stackId="a" />
-              <Bar dataKey="AdC" fill="#3b82f6" stackId="a" radius={[4, 4, 0, 0]} />
-              <Line type="monotone" dataKey="Total" stroke="#f59e0b" strokeWidth={2.5} dot={false} />
+              <Bar dataKey="P&C" fill="#1e40af" radius={[3, 3, 0, 0]} maxBarSize={24} />
+              <Bar dataKey="AdC" fill="#f59e0b" radius={[3, 3, 0, 0]} maxBarSize={24} />
             </ComposedChart>
           </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* ── Tabla comparación P&C vs AdC ─────────────────────────────────────── */}
+      <div className="px-4 pb-4">
+        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-100 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-gray-700">Comparación P&C vs AdC — contratos con proyección AdC</span>
+              {(cmpContrato || cmpProyecto) && (
+                <button onClick={() => { setCmpContrato(''); setCmpProyecto('') }}
+                  className="text-xs text-blue-500 hover:text-blue-700">Limpiar</button>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <input type="text" placeholder="Contrato" value={cmpContrato}
+                onChange={e => setCmpContrato(e.target.value)}
+                className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-700 w-36" />
+              <input type="text" placeholder="Proyecto (ID_BLANCO)" value={cmpProyecto}
+                onChange={e => setCmpProyecto(e.target.value)}
+                className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-700 w-44" />
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-slate-50 text-gray-500 uppercase text-[10px] tracking-wide">
+                <tr>
+                  <th className="px-3 py-2.5 text-left">Contrato</th>
+                  <th className="px-3 py-2.5 text-left">Proyecto</th>
+                  <th className="px-3 py-2.5 text-left">Tipo servicio</th>
+                  <th className="px-3 py-2.5 text-right">P&C (CLP)</th>
+                  <th className="px-3 py-2.5 text-right">AdC (CLP)</th>
+                  <th className="px-3 py-2.5 text-right">Diferencia P&C − AdC</th>
+                </tr>
+              </thead>
+              <tbody>
+                {comparacion.slice(0, 200).map((r: any, i: number) => {
+                  const diff = r.diferencia ?? 0
+                  return (
+                    <tr key={i} className={`border-t border-slate-50 hover:bg-blue-50/30 ${i % 2 === 1 ? 'bg-slate-50/30' : ''}`}>
+                      <td className="px-3 py-2 font-mono font-semibold text-gray-700">{r.contrato}</td>
+                      <td className="px-3 py-2 text-gray-600 max-w-[180px] truncate" title={r.proyecto}>{r.proyecto || '—'}</td>
+                      <td className="px-3 py-2 text-gray-500 max-w-[140px] truncate" title={r.tipo_servicio}>{r.tipo_servicio || '—'}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-[#1e40af] font-semibold">
+                        {r.pyc > 0 ? clp(r.pyc) : <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums text-[#f59e0b] font-semibold">
+                        {r.adc > 0 ? clp(r.adc) : <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums font-semibold"
+                        style={{ color: diff > 0 ? '#15803d' : diff < 0 ? '#dc2626' : '#6b7280' }}>
+                        {diff !== 0
+                          ? `${diff > 0 ? '+' : ''}${clp(diff)}`
+                          : <span className="text-gray-300">—</span>}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+            {comparacion.length === 0 && (
+              <p className="text-xs text-gray-400 text-center py-6">Sin datos para comparar</p>
+            )}
+          </div>
+          {comparacion.length > 0 && (() => {
+            const totPyc  = comparacion.reduce((s: number, r: any) => s + (r.pyc  ?? 0), 0)
+            const totAdc  = comparacion.reduce((s: number, r: any) => s + (r.adc  ?? 0), 0)
+            const totDiff = totPyc - totAdc
+            return (
+              <div className="border-t-2 border-slate-200 bg-slate-50 px-3 py-2 flex justify-end gap-8 text-xs font-semibold">
+                <span>Total P&C: <span style={{ color: '#1e40af' }}>{clp(totPyc)}</span></span>
+                <span>Total AdC: <span style={{ color: '#f59e0b' }}>{clp(totAdc)}</span></span>
+                <span>Diferencia: <span style={{ color: totDiff > 0 ? '#15803d' : totDiff < 0 ? '#dc2626' : '#6b7280' }}>
+                  {totDiff > 0 ? '+' : ''}{clp(totDiff)}
+                </span></span>
+              </div>
+            )
+          })()}
         </div>
       </div>
 
       {/* ── Tabla de detalle ─────────────────────────────────────────────────── */}
       <div className="px-4 pb-6">
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-100">
-            <span className="text-sm font-semibold text-gray-700">Detalle por contrato</span>
-            <div className="flex gap-2 ml-auto">
+          <div className="px-4 py-3 border-b border-slate-100 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-gray-700">Detalle por contrato</span>
+              {(filtroContrato || filtroProyecto || filtroPeriodo || filtroPeriodoH || filtroTipo) && (
+                <button
+                  onClick={() => { setFiltroContrato(''); setFiltroProyecto(''); setFiltroPeriodo(''); setFiltroPeriodoH(''); setFiltroTipo('') }}
+                  className="text-xs text-blue-500 hover:text-blue-700"
+                >
+                  Limpiar filtros
+                </button>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
               <input
-                type="month" value={filtroPeriodo}
-                onChange={e => setFiltroPeriodo(e.target.value)}
-                className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-700"
+                type="text" placeholder="Contrato" value={filtroContrato}
+                onChange={e => setFiltroContrato(e.target.value)}
+                className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-700 w-36"
               />
+              <input
+                type="text" placeholder="ID_BLANCO / Proyecto" value={filtroProyecto}
+                onChange={e => setFiltroProyecto(e.target.value)}
+                className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-700 w-44"
+              />
+              <div className="flex items-center gap-1">
+                <input
+                  type="month" value={filtroPeriodo}
+                  onChange={e => setFiltroPeriodo(e.target.value)}
+                  className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-700"
+                />
+                <span className="text-xs text-gray-400">—</span>
+                <input
+                  type="month" value={filtroPeriodoH}
+                  onChange={e => setFiltroPeriodoH(e.target.value)}
+                  className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-700"
+                />
+              </div>
               <select
                 value={filtroTipo}
                 onChange={e => setFiltroTipo(e.target.value)}
@@ -427,26 +639,47 @@ export default function Proyecciones() {
             <table className="w-full text-xs">
               <thead className="bg-slate-50 text-gray-500 uppercase text-[10px] tracking-wide">
                 <tr>
-                  <th className="px-3 py-2.5 text-left">Contrato</th>
-                  <th className="px-3 py-2.5 text-left">Proyecto</th>
-                  <th className="px-3 py-2.5 text-left">Período</th>
-                  <th className="px-3 py-2.5 text-right">Monto Proyectado</th>
-                  <th className="px-3 py-2.5 text-left">Moneda</th>
-                  <th className="px-3 py-2.5 text-center">Tipo</th>
+                  {([
+                    { key: 'contrato',         label: 'Contrato',       align: 'left'   },
+                    { key: 'proyecto',         label: 'Proyecto',       align: 'left'   },
+                    { key: 'tipo_servicio',    label: 'Tipo servicio',  align: 'left'   },
+                    { key: 'periodo',          label: 'Período',        align: 'left'   },
+                    { key: 'monto_proyectado', label: 'Monto CLP',      align: 'right'  },
+                    { key: 'monto_usd',        label: 'Monto USD',      align: 'right'  },
+                    { key: 'tipo_proyeccion',  label: 'Tipo',           align: 'center' },
+                  ] as const).map(({ key, label, align }) => (
+                    <th
+                      key={key}
+                      onClick={() => toggleSort(key)}
+                      className={`px-3 py-2.5 text-${align} cursor-pointer select-none hover:bg-slate-100 transition-colors`}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        {label}
+                        <span className="text-[9px]">
+                          {sortCol === key ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}
+                        </span>
+                      </span>
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {tabla.slice(0, 200).map((r: any, i: number) => (
+                {tablaOrdenada.slice(0, 200).map((r: any, i: number) => (
                   <tr key={i}
                     className={`border-t border-slate-50 hover:bg-blue-50/30 transition-colors ${i % 2 === 1 ? 'bg-slate-50/30' : ''}`}
                   >
                     <td className="px-3 py-2 font-mono font-semibold text-gray-700">{r.contrato}</td>
                     <td className="px-3 py-2 max-w-[180px] truncate text-gray-600" title={r.proyecto}>{r.proyecto || '—'}</td>
+                    <td className="px-3 py-2 max-w-[160px] truncate text-gray-500" title={r.tipo_servicio}>{r.tipo_servicio || '—'}</td>
                     <td className="px-3 py-2 text-gray-500">{r.periodo}</td>
                     <td className="px-3 py-2 text-right tabular-nums font-semibold">
                       {r.monto_proyectado != null ? clp(r.monto_proyectado) : '—'}
                     </td>
-                    <td className="px-3 py-2 text-gray-500">{r.moneda}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-gray-500">
+                      {r.monto_usd != null && r.monto_usd > 0
+                        ? new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(r.monto_usd)
+                        : '—'}
+                    </td>
                     <td className="px-3 py-2 text-center">
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
                         r.tipo_proyeccion === 'AdC' ? 'bg-blue-100 text-blue-700' : 'bg-slate-700 text-white'

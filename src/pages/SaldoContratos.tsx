@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip,
+  LineChart, Line, XAxis, YAxis, Tooltip,
   ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell,
 } from 'recharts'
+import * as XLSX from 'xlsx'
 import {
   getSaldoKpis, getSaldoFiltros, getContratos,
   getSaldoEvolucion, getSaldoTimeline,
@@ -48,13 +49,20 @@ const cellBg = (mi: number, ultimoEpIdx: number, agotIdx: number | null): string
   return '#f0fdf4'                                   // verde — OK futuro
 }
 
-const TL_STICKY: { label: string; left: number; minW: number; align: 'left' | 'right' }[] = [
-  { label: 'Contrato',     left: 0,   minW: 84,  align: 'left'  },
-  { label: 'Descripción',  left: 84,  minW: 155, align: 'left'  },
-  { label: 'Área',         left: 239, minW: 75,  align: 'left'  },
-  { label: 'Presupuesto',  left: 314, minW: 86,  align: 'right' },
-  { label: 'Saldo Actual', left: 400, minW: 86,  align: 'right' },
-  { label: 'Agota en',     left: 486, minW: 80,  align: 'left'  },
+const monthDiff = (from: string, to: string): number => {
+  if (!from || !to) return 999
+  const [fy, fm] = from.split('-').map(Number)
+  const [ty, tm] = to.split('-').map(Number)
+  return (ty - fy) * 12 + (tm - fm)
+}
+
+const TL_STICKY: { label: string; field: string; left: number; minW: number; align: 'left' | 'right' }[] = [
+  { label: 'Contrato',     field: 'codigo_ctt',    left: 0,   minW: 84,  align: 'left'  },
+  { label: 'Descripción',  field: 'descripcion',   left: 84,  minW: 155, align: 'left'  },
+  { label: 'Área',         field: 'area',          left: 239, minW: 75,  align: 'left'  },
+  { label: 'Presupuesto',  field: 'presupuesto',   left: 314, minW: 86,  align: 'right' },
+  { label: 'Saldo Actual', field: 'saldo_actual',  left: 400, minW: 86,  align: 'right' },
+  { label: 'Agota en',     field: 'mes_agotamiento', left: 486, minW: 80, align: 'left' },
 ]
 type SortDir = 'asc' | 'desc'
 
@@ -66,21 +74,42 @@ export default function SaldoContratos() {
   const [contratos, setContratos] = useState<any[]>([])
   const [evolucion, setEvolucion] = useState<any[]>([])
   const [filters,   setFilters]   = useState({
-    estado_saldo: '', area: '', tipo: '', estado_ctt: '', alcance: '', contrato: '',
+    estado_saldo: '', area: '', tipo: '', estado_ctt: '', alcance: '', contrato: '', proyecto: '',
   })
   const [sortCol, setSortCol] = useState<string>('Pct_Saldo')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
 
   // timeline state
-  const [timeline,        setTimeline]        = useState<any>(null)
-  const [timelineLoading, setTimelineLoading] = useState(true)
-  const [tlShowPyC,       setTlShowPyC]       = useState(false)
-  const [tlShowRiesgo,    setTlShowRiesgo]    = useState(false)
+  const [timeline,          setTimeline]          = useState<any>(null)
+  const [timelineLoading,   setTimelineLoading]   = useState(true)
+  const [tlShowPyC,         setTlShowPyC]         = useState(false)
+  const [tlShowRiesgo,      setTlShowRiesgo]      = useState(false)
+  const [tlProyecciones,    setTlProyecciones]    = useState<string[]>([])
+  const [tlSortCol,         setTlSortCol]         = useState<string>('')
+  const [tlSortDir,         setTlSortDir]         = useState<SortDir>('asc')
+
+  // independent "Próximos a agotar" — not affected by user filters
+  const [proximosAgotar,    setProximosAgotar]    = useState<any[]>([])
+  const [proximosMesActual, setProximosMesActual] = useState<string>('')
+  const [proximosLoading,   setProximosLoading]   = useState(true)
 
   useEffect(() => {
     getSaldoKpis().then(setKpis).catch(() => {})
     getSaldoFiltros().then(setFiltros).catch(() => {})
     getSaldoEvolucion().then(setEvolucion).catch(() => {})
+    setProximosLoading(true)
+    getSaldoTimeline({ tipo: 'Perforación', limite: 60, meses_fut: 24 })
+      .then((data: any) => {
+        setProximosMesActual(data.mes_actual ?? '')
+        setProximosAgotar(
+          (data.contratos ?? [])
+            .filter((c: any) => c.mes_agotamiento)
+            .sort((a: any, b: any) => a.mes_agotamiento.localeCompare(b.mes_agotamiento))
+            .slice(0, 10)
+        )
+      })
+      .catch(() => {})
+      .finally(() => setProximosLoading(false))
   }, [])
 
   useEffect(() => {
@@ -92,17 +121,14 @@ export default function SaldoContratos() {
     setTimelineLoading(true)
     const active = Object.entries(filters).filter(([, v]) => v)
     const params: Record<string, string | number> = Object.fromEntries(active)
-    if (active.length === 0) {
-      params.tipo   = 'Perforación'
-      params.limite = 10
-    } else {
-      params.limite = 60
-    }
+    if (active.length === 0) params.tipo = 'Perforación'
+    params.limite = 60
+    if (tlProyecciones.length > 0) params.tipo_proyeccion = tlProyecciones.join(',')
     getSaldoTimeline(params)
       .then(setTimeline)
       .catch(() => setTimeline(null))
       .finally(() => setTimelineLoading(false))
-  }, [filters])
+  }, [filters, tlProyecciones])
 
   const setFilter = (k: string, v: string) => setFilters(f => ({ ...f, [k]: v }))
 
@@ -119,14 +145,35 @@ export default function SaldoContratos() {
     return arr
   }, [contratos, sortCol, sortDir])
 
-  // timeline — contratos filtrados por toggles
+  // timeline — contratos filtrados y ordenados
   const tlContratos = useMemo(() => {
     if (!timeline) return []
     let rows: any[] = timeline.contratos
     if (tlShowPyC)    rows = rows.filter((c: any) => c.tiene_proyeccion)
     if (tlShowRiesgo) rows = rows.filter((c: any) => c.mes_agotamiento)
+    if (tlSortCol) {
+      rows = [...rows].sort((a, b) => {
+        const av = a[tlSortCol] ?? '', bv = b[tlSortCol] ?? ''
+        // nulos al final en ambas direcciones
+        if (av === '' || av === null) return 1
+        if (bv === '' || bv === null) return -1
+        const cmp = typeof av === 'number'
+          ? av - bv
+          : String(av).localeCompare(String(bv))
+        return tlSortDir === 'asc' ? cmp : -cmp
+      })
+    }
     return rows
-  }, [timeline, tlShowPyC, tlShowRiesgo])
+  }, [timeline, tlShowPyC, tlShowRiesgo, tlSortCol, tlSortDir])
+
+  const tlToggleSort = (field: string) => {
+    if (tlSortCol === field) setTlSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setTlSortCol(field); setTlSortDir('asc') }
+  }
+  const TlSortIcon = ({ field }: { field: string }) => {
+    if (tlSortCol !== field) return <span style={{ opacity: 0.3, marginLeft: 2 }}>⇅</span>
+    return <span style={{ color: 'var(--gold-500)', marginLeft: 2 }}>{tlSortDir === 'asc' ? '↑' : '↓'}</span>
+  }
 
   const toggleSort = (col: string) => {
     if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -143,6 +190,20 @@ export default function SaldoContratos() {
   })).filter(x => x.value > 0)
 
   const hasFilters = Object.values(filters).some(Boolean)
+
+  const exportSaldo = () => {
+    if (!timeline) return
+    const headers = ['Contrato', 'Descripción', 'Área', 'Presupuesto', 'Saldo Actual', 'Agota en', ...timeline.meses]
+    const rows = tlContratos.map((c: any) => [
+      c.codigo_ctt, c.descripcion, c.area,
+      c.presupuesto, c.saldo_actual, c.mes_agotamiento ?? '',
+      ...c.saldos,
+    ])
+    const wb = XLSX.utils.book_new()
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows])
+    XLSX.utils.book_append_sheet(wb, ws, 'Saldo')
+    XLSX.writeFile(wb, 'proyeccion_saldo.xlsx')
+  }
 
   if (!kpis) return (
     <div className="page" style={{ justifyContent: 'center', alignItems: 'center', color: '#9aa1b3', fontSize: 13 }}>
@@ -176,11 +237,12 @@ export default function SaldoContratos() {
               onChange={e => setFilter('contrato', e.target.value)}
             />
             {[
+              { key: 'proyecto',     label: 'Proyecto',         opts: filtros.proyectos   ?? [] },
+              { key: 'tipo',         label: 'Tipo contrato',    opts: filtros.tipos       ?? [] },
+              { key: 'estado_ctt',   label: 'Vigente',          opts: filtros.estados_ctt ?? [] },
               { key: 'estado_saldo', label: 'Estado saldo',     opts: filtros.estados_saldo ?? [] },
-              { key: 'alcance',      label: 'Alcance servicio', opts: filtros.alcances ?? [] },
-              { key: 'area',         label: 'Área',             opts: filtros.areas ?? [] },
-              { key: 'tipo',         label: 'Tipo contrato',    opts: filtros.tipos ?? [] },
-              { key: 'estado_ctt',   label: 'Estado contrato',  opts: filtros.estados_ctt ?? [] },
+              { key: 'alcance',      label: 'Alcance servicio', opts: filtros.alcances    ?? [] },
+              { key: 'area',         label: 'Área',             opts: filtros.areas       ?? [] },
             ].map(({ key, label, opts }) => (
               opts.length > 0 && (
                 <select
@@ -196,7 +258,7 @@ export default function SaldoContratos() {
             ))}
             {hasFilters && (
               <button className="btn btn-ghost" style={{ fontSize: 12 }}
-                onClick={() => setFilters({ estado_saldo: '', area: '', tipo: '', estado_ctt: '', alcance: '', contrato: '' })}>
+                onClick={() => setFilters({ estado_saldo: '', area: '', tipo: '', estado_ctt: '', alcance: '', contrato: '', proyecto: '' })}>
                 ✕ Limpiar
               </button>
             )}
@@ -242,18 +304,43 @@ export default function SaldoContratos() {
               ))}
             </div>
 
-            {/* Toggles de filtro local */}
+            {/* Filtros de filas */}
             <div style={{ display: 'flex', gap: 5 }}>
               <button
                 className={tlShowPyC ? 'btn' : 'btn btn-ghost'}
                 style={{ fontSize: 11, padding: '2px 9px' }}
                 onClick={() => setTlShowPyC(v => !v)}
-              >Con P&C</button>
+              >Con proyección</button>
               <button
                 className={tlShowRiesgo ? 'btn' : 'btn btn-ghost'}
                 style={{ fontSize: 11, padding: '2px 9px' }}
                 onClick={() => setTlShowRiesgo(v => !v)}
-              >En riesgo</button>
+              >En riesgo / Advertencia</button>
+            </div>
+
+            {/* Selector tipo proyección — multi-select */}
+            <div style={{ display: 'flex', gap: 3, alignItems: 'center', marginLeft: 'auto' }}>
+              <span style={{ fontSize: 10, color: '#9aa1b3', marginRight: 2 }}>Proyección:</span>
+              {(['P&C', 'AdC', 'Lineal'] as const).map(t => {
+                const activo = tlProyecciones.includes(t)
+                return (
+                  <button
+                    key={t}
+                    className={activo ? 'btn' : 'btn btn-ghost'}
+                    style={{ fontSize: 11, padding: '2px 9px' }}
+                    onClick={() => setTlProyecciones(prev =>
+                      activo ? prev.filter(x => x !== t) : [...prev, t]
+                    )}
+                  >{t}</button>
+                )
+              })}
+              <button
+                className="btn btn-ghost"
+                style={{ fontSize: 11, padding: '2px 9px', marginLeft: 6 }}
+                onClick={exportSaldo}
+                title="Descargar Excel"
+                disabled={!timeline}
+              >⬇ Excel</button>
             </div>
           </div>
 
@@ -267,20 +354,22 @@ export default function SaldoContratos() {
               <table style={{ borderCollapse: 'separate', borderSpacing: 0, fontSize: 11 }}>
                 <thead>
                   <tr>
-                    {/* Columnas fijas */}
+                    {/* Columnas fijas — clickeables para ordenar */}
                     {TL_STICKY.map((col, ci) => (
                       <th key={col.label}
+                        onClick={() => tlToggleSort(col.field)}
                         style={{
                           position: 'sticky', top: 0, left: col.left, zIndex: 5,
                           minWidth: col.minW, padding: '7px 8px',
                           background: '#f9fafb', whiteSpace: 'nowrap',
                           borderBottom: '2px solid var(--gray-200)',
                           textAlign: col.align,
+                          cursor: 'pointer', userSelect: 'none',
                           boxShadow: ci === TL_STICKY.length - 1
                             ? '3px 0 6px rgba(0,0,0,.07)' : undefined,
                         }}
                       >
-                        {col.label}
+                        {col.label}<TlSortIcon field={col.field} />
                       </th>
                     ))}
 
@@ -500,21 +589,66 @@ export default function SaldoContratos() {
               </ResponsiveContainer>
             </div>
 
-            <div className="panel">
-              <h2>Top 10 EP Consumido</h2>
-              <ResponsiveContainer width="100%" height={230}>
-                <BarChart
-                  data={[...contratos].sort((a, b) => b.EP_Consumido_CLP - a.EP_Consumido_CLP).slice(0, 10)}
-                  layout="vertical"
-                >
-                  <XAxis type="number" tickFormatter={v => `$${(v / 1e9).toFixed(0)}MM`}
-                    tick={{ fontSize: 9 }} axisLine={false} tickLine={false} />
-                  <YAxis dataKey="codigo_ctt" type="category" tick={{ fontSize: 9 }} width={75}
-                    axisLine={false} tickLine={false} />
-                  <Tooltip formatter={v => [clp(Number(v)), 'EP']} contentStyle={{ fontSize: 11 }} />
-                  <Bar dataKey="EP_Consumido_CLP" fill="var(--navy-500)" radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+            {/* ── Próximos a agotar saldo ── */}
+            <div className="panel" style={{ maxHeight: 340, overflowY: 'auto' }}>
+              <h2 style={{ marginBottom: 10 }}>Próximos a agotar saldo</h2>
+              {proximosLoading ? (
+                <div style={{ color: '#9aa1b3', fontSize: 11, textAlign: 'center', padding: '16px 0' }}>Calculando…</div>
+              ) : proximosAgotar.length === 0 ? (
+                <div style={{ color: '#9aa1b3', fontSize: 11, textAlign: 'center', padding: '16px 0' }}>
+                  Sin contratos con agotamiento proyectado
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                  {proximosAgotar.map((c: any, i: number) => {
+                    const meses    = monthDiff(proximosMesActual, c.mes_agotamiento)
+                    const urgColor = meses <= 3 ? '#dc2626' : meses <= 6 ? '#ea580c' : meses <= 12 ? '#d97706' : '#16a34a'
+                    return (
+                      <div key={c.codigo_ctt} style={{
+                        display: 'flex', gap: 7, alignItems: 'flex-start',
+                        padding: '6px 0',
+                        borderBottom: i < proximosAgotar.length - 1 ? '1px solid #f3f4f6' : 'none',
+                      }}>
+                        {/* rank badge */}
+                        <div style={{
+                          minWidth: 18, height: 18, borderRadius: '50%',
+                          background: urgColor, color: '#fff',
+                          fontSize: 9, fontWeight: 700, flexShrink: 0,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          marginTop: 1,
+                        }}>{i + 1}</div>
+
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          {/* fila 1: código + tipo + "agota en" */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'nowrap' }}>
+                            <span style={{ fontFamily: 'monospace', fontSize: 10, fontWeight: 700, color: 'var(--navy-500)', flexShrink: 0 }}>
+                              {c.codigo_ctt}
+                            </span>
+                            {c.tipo && (
+                              <span style={{
+                                fontSize: 8, padding: '0 4px', borderRadius: 3, flexShrink: 0,
+                                background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe',
+                              }}>{c.tipo}</span>
+                            )}
+                            <span style={{ marginLeft: 'auto', fontSize: 9, fontWeight: 700, color: urgColor, flexShrink: 0 }}>
+                              {fmtMes(c.mes_agotamiento)}&nbsp;·&nbsp;{meses}m
+                            </span>
+                          </div>
+                          {/* fila 2: descripción */}
+                          <div style={{ fontSize: 9, color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                            title={c.descripcion}>{c.descripcion}</div>
+                          {/* fila 3: proyectos que atiende (de tabla proyecciones P&C) */}
+                          {c.proyectos && (
+                            <div style={{ fontSize: 8, color: '#9aa1b3', lineHeight: 1.4 }}>
+                              {c.proyectos}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </div>

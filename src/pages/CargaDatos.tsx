@@ -2,7 +2,7 @@ import { useCallback, useRef, useState, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import PageHeader from '../components/PageHeader'
 import {
-  uploadProyeccionesPyC, uploadDimensiones, uploadIncidencias, uploadCostoMetro,
+  uploadProyeccionesPyC, uploadProyeccionesAdC, uploadDimensiones, uploadIncidencias, uploadCostoMetro,
   getDpoConfig, saveDpoConfig, getDpoMesesCargados, deleteDpoCostoMetroMes,
   getRegistroCargas, getFuentesExternas,
 } from '../api/client'
@@ -18,7 +18,7 @@ const AREAS: Record<Area, { label: string; icon: string; description: string }> 
 
 // Mapeo tabla SQL → módulos de la plataforma
 const TABLA_MODULOS: Record<string, string> = {
-  'dbo.proyecciones':          'Proyecciones P&C',
+  'dbo.proyecciones':          'Proyecciones',
   'dbo.CostoMetro':            'Dashboard DPO',
   'dbo.registro_incidencias':  'Estado Proyectos',
   'dbo.Tabla_Articulos':       'Análisis · Saldo',
@@ -76,7 +76,7 @@ function DropZone({ inputRef, accept, acceptLabel, loading, onFile, onDrop }: {
       ) : (
         <div className="space-y-1.5">
           <p className="text-xl">📂</p>
-          <p className="text-sm font-medium text-gray-600">Arrastrá o hacé clic para seleccionar</p>
+          <p className="text-sm font-medium text-gray-600">Arrasta o hace clic para seleccionar</p>
           <p className="text-xs text-gray-400">{acceptLabel}</p>
         </div>
       )}
@@ -100,7 +100,10 @@ function ResultOk({ detail }: { detail: any }) {
     return (
       <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-1">
         <p className="text-sm font-semibold text-green-800">Carga exitosa</p>
-        <p className="text-sm text-green-700">{detail.filas_insertadas?.toLocaleString('es-CL')} filas · {detail.contratos} contratos</p>
+        <p className="text-sm text-green-700">
+          {detail.filas_insertadas?.toLocaleString('es-CL')} filas · {detail.contratos} contrato{detail.contratos !== 1 ? 's' : ''}
+          {detail.proyectos != null && ` · ${detail.proyectos} proyecto${detail.proyectos !== 1 ? 's' : ''}`}
+        </p>
         {detail.periodos?.length > 0 && (
           <p className="text-xs text-green-600">Períodos: {detail.periodos[0]} → {detail.periodos.at(-1)}</p>
         )}
@@ -524,7 +527,13 @@ export default function CargaDatos() {
             {area === 'dab' && (
               <>
                 <ResponsableBar value={responsable} onChange={saveResponsable} />
-                <div className="grid grid-cols-1 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <UploadCard
+                    title="Proyecciones AdC"
+                    subtitle='Excel con hoja "PROYECCIONES FIN". Reemplaza solo los contratos y proyectos incluidos en el archivo, sin afectar los de otros administradores ni las proyecciones P&C.'
+                    accept=".xlsx,.xls" acceptLabel="Solo archivos .xlsx / .xls — hoja PROYECCIONES FIN" icon="📊"
+                    onUpload={file => uploadProyeccionesAdC(file, responsable)}
+                  />
                   <UploadCard
                     title="Registro de Incidencias"
                     subtitle='Archivo Excel de Reportabilidad Contratos. Carga la hoja "Registro incidencias".'
@@ -542,7 +551,7 @@ export default function CargaDatos() {
                 <ResponsableBar value={responsable} onChange={saveResponsable} />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <UploadCard
-                    title="Proyecciones P&C"
+                    title="Proyecciones P&C (parquet)"
                     subtitle="Archivo .parquet exportado por el equipo de P&C. Reemplaza la tabla dbo.proyecciones."
                     accept=".parquet" acceptLabel="Solo archivos .parquet" icon="📈"
                     onUpload={file => uploadProyeccionesPyC(file, responsable)}

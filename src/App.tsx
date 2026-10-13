@@ -15,6 +15,7 @@ import Modificaciones from './pages/Modificaciones'
 import DashboardDPO from './pages/DashboardDPO'
 import SolpeTiempos from './pages/SolpeTiempos'
 import Simulacion from './pages/Simulacion'
+import EstadosPago from './pages/EstadosPago'
 
 export default function App() {
   return (
@@ -23,6 +24,7 @@ export default function App() {
         <Route path="/" element={<Layout />}>
           <Route index                element={<Home />} />
           <Route path="saldo"         element={<SaldoContratos />} />
+          <Route path="estados-pago"  element={<EstadosPago />} />
           <Route path="proyecciones"  element={<Proyecciones />} />
           <Route path="analisis"      element={<AnalisisProyecto />} />
           <Route path="sourcing"      element={<SourcingPlan />} />

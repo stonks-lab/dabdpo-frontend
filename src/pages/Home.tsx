@@ -32,7 +32,7 @@ const mmclp = (v: number) => `$${(v / 1e9).toFixed(1)} Miles M CLP`
 
 const SHORTCUTS = [
   { to: '/saldo',           icon: '💰', label: 'Saldo Contratos' },
-  { to: '/proyecciones',    icon: '📈', label: 'Proyecciones P&C' },
+  { to: '/proyecciones',    icon: '📈', label: 'Proyecciones' },
   { to: '/analisis',        icon: '🔬', label: 'Por Proyecto' },
   { to: '/modificaciones',  icon: '🔄', label: 'Modificaciones' },
   { to: '/licitaciones',    icon: '📋', label: 'Licitaciones' },

@@ -13,10 +13,13 @@ export const getContratos      = (p: object)  => api.get('/saldo/contratos', { p
 export const getSaldoEvolucion = ()           => api.get('/saldo/evolucion').then(r => r.data)
 export const getSaldoTimeline  = (p?: object) => api.get('/saldo/timeline',  { params: p }).then(r => r.data)
 
-export const getLicitKpis     = ()      => api.get('/licitaciones/kpis').then(r => r.data)
-export const getLicitPorEstado= ()      => api.get('/licitaciones/por-estado').then(r => r.data)
-export const getLicitPorAnio  = ()      => api.get('/licitaciones/por-anio').then(r => r.data)
-export const getLicitTabla    = (p: object) => api.get('/licitaciones/tabla', { params: p }).then(r => r.data)
+export const getLicitKpis        = ()      => api.get('/licitaciones/kpis').then(r => r.data)
+export const getLicitPorEstado   = ()      => api.get('/licitaciones/por-estado').then(r => r.data)
+export const getLicitPorAnio     = ()      => api.get('/licitaciones/por-anio').then(r => r.data)
+export const getLicitTabla       = (p: object) => api.get('/licitaciones/tabla', { params: p }).then(r => r.data)
+export const getLicitProcesosKpis = ()    => api.get('/licitaciones/procesos/kpis').then(r => r.data)
+export const getLicitProcesos    = (p?: object) => api.get('/licitaciones/procesos', { params: p }).then(r => r.data)
+export const getLicitProcesoDetalle = (proceso: string) => api.get('/licitaciones/procesos/detalle', { params: { proceso } }).then(r => r.data)
 
 export const getAlertasKpis   = ()      => api.get('/alertas/kpis').then(r => r.data)
 export const getAlertasContratos = ()   => api.get('/alertas/contratos').then(r => r.data)
@@ -26,13 +29,14 @@ export const getAnalisisKpis          = ()            => api.get('/analisis/kpis
 export const getAnalisisPorProyecto   = ()            => api.get('/analisis/por-proyecto').then(r => r.data)
 export const getAnalisisTabla         = (p: object)   => api.get('/analisis/tabla', { params: p }).then(r => r.data)
 
-export const getPycTimeline            = (p?: object) => api.get('/proyecciones/timeline', { params: p }).then(r => r.data)
+export const getPycTimeline            = (p?: object) => api.get('/proyecciones/timeline',    { params: p }).then(r => r.data)
+export const getPycComparacion         = (p?: object) => api.get('/proyecciones/comparacion', { params: p }).then(r => r.data)
 
-export const getSourcingKpis          = ()            => api.get('/sourcing/kpis').then(r => r.data)
-export const getSourcingPorMes        = ()            => api.get('/sourcing/por-mes').then(r => r.data)
-export const getSourcingPorEstatus    = ()            => api.get('/sourcing/por-estatus').then(r => r.data)
-export const getSourcingPorProyecto   = ()            => api.get('/sourcing/por-proyecto').then(r => r.data)
-export const getSourcingTabla         = ()            => api.get('/sourcing/tabla').then(r => r.data)
+export const getSourcingKpis             = ()  => api.get('/sourcing/kpis').then(r => r.data)
+export const getSourcingTabla            = ()  => api.get('/sourcing/tabla').then(r => r.data)
+export const getSourcingCoberturaMetros  = ()  => api.get('/sourcing/cobertura-metros').then(r => r.data)
+export const getSourcingCoberturaDetalle = (mes: string, cubierto: boolean) =>
+  api.get('/sourcing/cobertura-detalle', { params: { mes, cubierto: cubierto ? 1 : 0 } }).then(r => r.data)
 
 export const uploadProyeccionesPyC = (file: File, usuario = '') => {
   const form = new FormData()
@@ -93,6 +97,22 @@ export const getSimulacionContratos   = ()              => api.get('/simulacion/
 export const getSimulacion            = (id: number)    => api.get(`/simulacion/${id}`).then(r => r.data)
 export const guardarSimulacion        = (body: object)  => api.post('/simulacion/guardar', body).then(r => r.data)
 export const eliminarSimulacion       = (id: number)    => api.delete(`/simulacion/${id}`).then(r => r.data)
+
+export const uploadProyeccionesAdC = (file: File, usuario = '') => {
+  const form = new FormData()
+  form.append('file', file)
+  return api.post('/upload/proyecciones-adc', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    params: { usuario },
+  }).then(r => r.data)
+}
+
+export const getEpKpis           = (p?: object) => api.get('/ep/kpis',      { params: p }).then(r => r.data)
+export const getEpFiltros        = ()           => api.get('/ep/filtros').then(r => r.data)
+export const getEpTabla          = (p?: object) => api.get('/ep/tabla',     { params: p }).then(r => r.data)
+export const getEpTimeline       = (p?: object) => api.get('/ep/timeline',  { params: p }).then(r => r.data)
+export const getEpPorMesDetalle  = (p?: object) => api.get('/ep/por-mes',   { params: p }).then(r => r.data)
+export const getEpPorTipoDetalle = (p?: object) => api.get('/ep/por-tipo',  { params: p }).then(r => r.data)
 
 export const uploadIncidencias = (file: File, usuario = '') => {
   const form = new FormData()
