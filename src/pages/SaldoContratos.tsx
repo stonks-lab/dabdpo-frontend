@@ -84,21 +84,27 @@ export default function SaldoContratos() {
   const [timelineLoading,   setTimelineLoading]   = useState(true)
   const [tlShowPyC,         setTlShowPyC]         = useState(false)
   const [tlShowRiesgo,      setTlShowRiesgo]      = useState(false)
-  const [tlProyecciones,    setTlProyecciones]    = useState<string[]>([])
+  const [tlProyecciones,    setTlProyecciones]    = useState<string[]>(['P&C'])
   const [tlSortCol,         setTlSortCol]         = useState<string>('')
   const [tlSortDir,         setTlSortDir]         = useState<SortDir>('asc')
 
   // independent "Próximos a agotar" — not affected by user filters
-  const [proximosAgotar,    setProximosAgotar]    = useState<any[]>([])
-  const [proximosMesActual, setProximosMesActual] = useState<string>('')
-  const [proximosLoading,   setProximosLoading]   = useState(true)
+  const [proximosAgotar,       setProximosAgotar]       = useState<any[]>([])
+  const [proximosMesActual,    setProximosMesActual]    = useState<string>('')
+  const [proximosLoading,      setProximosLoading]      = useState(true)
+  const [proximosProyecciones, setProximosProyecciones] = useState<string[]>(['P&C'])
 
   useEffect(() => {
     getSaldoKpis().then(setKpis).catch(() => {})
     getSaldoFiltros().then(setFiltros).catch(() => {})
     getSaldoEvolucion().then(setEvolucion).catch(() => {})
+  }, [])
+
+  useEffect(() => {
     setProximosLoading(true)
-    getSaldoTimeline({ tipo: 'Perforación', limite: 60, meses_fut: 24 })
+    const params: Record<string, string | number> = { tipo: 'Perforación', limite: 60, meses_fut: 24 }
+    if (proximosProyecciones.length > 0) params.tipo_proyeccion = proximosProyecciones.join(',')
+    getSaldoTimeline(params)
       .then((data: any) => {
         setProximosMesActual(data.mes_actual ?? '')
         setProximosAgotar(
@@ -110,7 +116,7 @@ export default function SaldoContratos() {
       })
       .catch(() => {})
       .finally(() => setProximosLoading(false))
-  }, [])
+  }, [proximosProyecciones])
 
   useEffect(() => {
     const params = Object.fromEntries(Object.entries(filters).filter(([, v]) => v))
@@ -590,8 +596,26 @@ export default function SaldoContratos() {
             </div>
 
             {/* ── Próximos a agotar saldo ── */}
-            <div className="panel" style={{ maxHeight: 340, overflowY: 'auto' }}>
-              <h2 style={{ marginBottom: 10 }}>Próximos a agotar saldo</h2>
+            <div className="panel">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 8, flexWrap: 'wrap' }}>
+                <h2 style={{ margin: 0, flex: 1 }}>Próximos a agotar saldo</h2>
+                <div style={{ display: 'flex', gap: 3 }}>
+                  {(['P&C', 'AdC', 'Lineal'] as const).map(t => {
+                    const activo = proximosProyecciones.includes(t)
+                    return (
+                      <button
+                        key={t}
+                        className={activo ? 'btn' : 'btn btn-ghost'}
+                        style={{ fontSize: 10, padding: '1px 7px' }}
+                        onClick={() => setProximosProyecciones(prev =>
+                          activo ? prev.filter(x => x !== t) : [...prev, t]
+                        )}
+                      >{t}</button>
+                    )
+                  })}
+                </div>
+              </div>
+              <div style={{ maxHeight: 290, overflowY: 'auto' }}>
               {proximosLoading ? (
                 <div style={{ color: '#9aa1b3', fontSize: 11, textAlign: 'center', padding: '16px 0' }}>Calculando…</div>
               ) : proximosAgotar.length === 0 ? (
@@ -649,6 +673,7 @@ export default function SaldoContratos() {
                   })}
                 </div>
               )}
+              </div>
             </div>
           </div>
         </div>

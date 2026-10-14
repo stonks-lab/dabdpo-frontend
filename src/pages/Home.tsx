@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell } from 'recharts'
 import { Link } from 'react-router-dom'
-import { getHomeKpis, getHomeFiltros, getEpPorMes, getEpPorTipo, getDpoCostoMetroUltimo, getContratos, getAlertasBoletas, getEstadoProyectosResumen, getHomeCampanaProyectos } from '../api/client'
+import { getHomeKpis, getHomeFiltros, getEpPorMes, getEpPorTipo, getDpoCostoMetroUltimo, getContratos, getAlertasBoletas, getEstadoProyectosResumen, getHomeCampanaProyectos, getSaldoTimeline } from '../api/client'
 import KpiCard from '../components/KpiCard'
 import PageHeader from '../components/PageHeader'
 import MultiSelectSearch from '../components/MultiSelectSearch'
@@ -29,6 +29,18 @@ const SEM_LABEL: Record<string, string> = {
 const clp   = (v: number) =>
   new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(v)
 const mmclp = (v: number) => `$${(v / 1e9).toFixed(1)} Miles M CLP`
+
+const MESES_ABR = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']
+const fmtMesH = (m: string) => {
+  const [y, mo] = m.split('-')
+  return `${MESES_ABR[parseInt(mo) - 1]}-${y.slice(2)}`
+}
+const monthDiffH = (from: string, to: string): number => {
+  if (!from || !to) return 999
+  const [fy, fm] = from.split('-').map(Number)
+  const [ty, tm] = to.split('-').map(Number)
+  return (ty - fy) * 12 + (tm - fm)
+}
 
 const SHORTCUTS = [
   { to: '/saldo',           icon: '💰', label: 'Saldo Contratos' },
@@ -93,9 +105,30 @@ export default function Home() {
   const detailRef      = useRef<HTMLDivElement>(null)
   const saldoDetailRef = useRef<HTMLDivElement>(null)
 
+  const [proximosAgotar,    setProximosAgotar]    = useState<any[]>([])
+  const [proximosMesActual, setProximosMesActual] = useState<string>('')
+  const [proximosLoading,   setProximosLoading]   = useState(true)
+
   // Carga filtros (una sola vez)
   useEffect(() => {
     getHomeFiltros().then(setFiltros).catch(() => {})
+  }, [])
+
+  // Carga independiente de contratos próximos a agotar saldo
+  useEffect(() => {
+    setProximosLoading(true)
+    getSaldoTimeline({ estado_ctt: 'Vigente', limite: 60, meses_fut: 24 })
+      .then((data: any) => {
+        setProximosMesActual(data.mes_actual ?? '')
+        setProximosAgotar(
+          (data.contratos ?? [])
+            .filter((c: any) => c.mes_agotamiento)
+            .sort((a: any, b: any) => a.mes_agotamiento.localeCompare(b.mes_agotamiento))
+            .slice(0, 15)
+        )
+      })
+      .catch(() => {})
+      .finally(() => setProximosLoading(false))
   }, [])
 
   // Recarga costoMetro cuando cambian las campañas seleccionadas
@@ -822,6 +855,74 @@ export default function Home() {
             </div>
           </section>
         </div>
+
+        {/* Contratos próximos a agotar saldo */}
+        <section className="panel">
+          <h2>Contratos próximos a agotar saldo</h2>
+          <p style={{ fontSize: 11, color: 'var(--color-text-muted)', margin: '-4px 0 8px', lineHeight: 1.4 }}>
+            La barra y el porcentaje indican el <strong>saldo restante</strong> respecto al presupuesto total del contrato.
+            El mes y los meses (ej. <em>Mar 2026 · 5m</em>) proyectan cuándo se agotará al ritmo de consumo actual.
+          </p>
+          {proximosLoading ? (
+            <div style={{ fontSize: 13, color: 'var(--color-text-muted)', padding: '8px 0' }}>Calculando proyecciones…</div>
+          ) : proximosAgotar.length === 0 ? (
+            <div style={{ fontSize: 13, color: 'var(--color-text-muted)', padding: '8px 0' }}>Sin contratos con agotamiento proyectado</div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '0 28px' }}>
+              {proximosAgotar.map((c: any, i: number) => {
+                const meses    = monthDiffH(proximosMesActual, c.mes_agotamiento)
+                const urgColor = meses <= 3 ? '#dc2626' : meses <= 6 ? '#ea580c' : meses <= 12 ? '#d97706' : '#16a34a'
+                const pct      = Math.max(0, Math.min(100, (c.pct_saldo ?? 0) * 100))
+                return (
+                  <div key={c.codigo_ctt} style={{
+                    display: 'flex', gap: 8, alignItems: 'flex-start',
+                    padding: '7px 0',
+                    borderBottom: '1px solid var(--gray-100)',
+                  }}>
+                    <div style={{
+                      minWidth: 20, height: 20, borderRadius: '50%',
+                      background: urgColor, color: '#fff',
+                      fontSize: 10, fontWeight: 700, flexShrink: 0,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      marginTop: 2,
+                    }}>{i + 1}</div>
+
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span style={{ fontFamily: 'monospace', fontSize: 11, fontWeight: 700, color: 'var(--navy-500)', flexShrink: 0 }}>
+                          {c.codigo_ctt}
+                        </span>
+                        {c.tipo && (
+                          <span style={{ fontSize: 9, padding: '0 4px', borderRadius: 3, background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', flexShrink: 0 }}>
+                            {c.tipo}
+                          </span>
+                        )}
+                        <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 700, color: urgColor, flexShrink: 0 }}>
+                          {fmtMesH(c.mes_agotamiento)}&nbsp;·&nbsp;{meses}m
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 10, color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 3 }}
+                        title={c.descripcion}>{c.descripcion || '—'}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <div style={{ flex: 1, background: '#e5e7eb', borderRadius: 99, height: 4 }}>
+                          <div style={{ height: 4, borderRadius: 99, width: `${pct}%`, background: urgColor }} />
+                        </div>
+                        <span style={{ fontSize: 9, color: urgColor, fontWeight: 700, flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
+                          {pct.toFixed(1)}%
+                        </span>
+                      </div>
+                      {c.proyectos && (
+                        <div style={{ fontSize: 9, color: 'var(--gray-400)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {c.proyectos}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </section>
 
         {/* Estado de Proyectos */}
         {estadoProyectos && (() => {

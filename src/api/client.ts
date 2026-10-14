@@ -56,8 +56,9 @@ export const uploadDimensiones = (file: File, usuario = '') => {
   }).then(r => r.data)
 }
 
-export const getIncidencias             = () => api.get('/estado-proyectos/incidencias').then(r => r.data)
-export const getEstadoProyectosResumen  = (p?: object) => api.get('/estado-proyectos/resumen', { params: p }).then(r => r.data)
+export const getIncidencias               = () => api.get('/estado-proyectos/incidencias').then(r => r.data)
+export const getEstadoProyectosResumen    = (p?: object) => api.get('/estado-proyectos/resumen',        { params: p }).then(r => r.data)
+export const getEstadoProyectosTimeline   = (p?: object) => api.get('/estado-proyectos/saldo-timeline', { params: p }).then(r => r.data)
 
 export const getMetrosPai    = () => api.get('/metros/pai').then(r => r.data)
 export const getMetrosAvance = () => api.get('/metros/avance').then(r => r.data)
