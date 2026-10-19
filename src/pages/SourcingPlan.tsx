@@ -3,7 +3,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   CartesianGrid, LabelList,
 } from 'recharts'
-import { getSourcingKpis, getSourcingTabla, getSourcingCoberturaMetros, getSourcingCoberturaDetalle } from '../api/client'
+import { getSourcingKpis, getSourcingTabla, getSourcingCoberturaMetros, getSourcingCoberturaDetalle, getLicitProcesos } from '../api/client'
 import KpiCard from '../components/KpiCard'
 import PageHeader from '../components/PageHeader'
 
@@ -71,10 +71,12 @@ export default function SourcingPlan() {
   const [kpis,      setKpis]      = useState<any>(null)
   const [tabla,     setTabla]     = useState<any[]>([])
   const [cobertura, setCobertura] = useState<any[]>([])
-  const [filtro,        setFiltro]        = useState('')
-  const [filtroProyecto, setFiltroProyecto] = useState('')
-  const [filtroEstado,   setFiltroEstado]   = useState('')
-  const [filtroTipo,     setFiltroTipo]     = useState('')
+  const [procesos,  setProcesos]  = useState<any[]>([])
+  const [filtro,          setFiltro]          = useState('')
+  const [filtroProyecto,  setFiltroProyecto]  = useState('')
+  const [filtroEstado,    setFiltroEstado]    = useState('')
+  const [filtroTipo,      setFiltroTipo]      = useState('')
+  const [soloConFinEst,   setSoloConFinEst]   = useState(false)
 
   const [drill,      setDrill]      = useState<DrillKey | null>(null)
   const [drillData,  setDrillData]  = useState<DrillData | null>(null)
@@ -86,6 +88,7 @@ export default function SourcingPlan() {
     getSourcingKpis().then(setKpis).catch(() => {})
     getSourcingTabla().then(setTabla).catch(() => setTabla([]))
     getSourcingCoberturaMetros().then(setCobertura).catch(() => setCobertura([]))
+    getLicitProcesos().then(setProcesos).catch(() => {})
   }, [])
 
   const handleSegmentClick = useCallback((cubierto: boolean) => (data: any) => {
@@ -117,18 +120,26 @@ export default function SourcingPlan() {
     return { totCub, totNoCub, total, pct: total > 0 ? Math.round((totCub / total) * 100) : 0 }
   }, [cobertura])
 
+  // Mapa N°PROCESO → fin_estimado para vincular licitaciones con sourcing
+  const finEstMap = useMemo(() => {
+    const m: Record<string, string> = {}
+    procesos.forEach((p: any) => { if (p['N°PROCESO'] && p['fin_estimado']) m[p['N°PROCESO']] = p['fin_estimado'] })
+    return m
+  }, [procesos])
+
   // Preservar mes raw (YYYY-MM) para el drill-down; mesLabel es el texto del eje
   const chartData = cobertura.map(r => ({ ...r, mesLabel: fmtMes(r.mes) }))
 
   const proyectosUnicos  = useMemo(() => [...new Set(tabla.map((r: any) => r.proyecto).filter(Boolean))].sort() as string[], [tabla])
   const estadosUnicos    = useMemo(() => [...new Set(tabla.map((r: any) => r.estado_contrato).filter(Boolean))].sort() as string[], [tabla])
-  const tiposUnicos      = useMemo(() => [...new Set(tabla.map((r: any) => r.tipo).filter(Boolean))].sort() as string[], [tabla])
+  const tiposUnicos      = useMemo(() => [...new Set(tabla.map((r: any) => r.alcance).filter(Boolean))].sort() as string[], [tabla])
 
   const tablaFiltrada = useMemo(() => {
     let rows = tabla
-    if (filtroProyecto) rows = rows.filter((r: any) => r.proyecto === filtroProyecto)
-    if (filtroEstado)   rows = rows.filter((r: any) => r.estado_contrato === filtroEstado)
-    if (filtroTipo)     rows = rows.filter((r: any) => r.tipo === filtroTipo)
+    if (filtroProyecto)  rows = rows.filter((r: any) => r.proyecto === filtroProyecto)
+    if (filtroEstado)    rows = rows.filter((r: any) => r.estado_contrato === filtroEstado)
+    if (filtroTipo)      rows = rows.filter((r: any) => r.alcance === filtroTipo)
+    if (soloConFinEst)   rows = rows.filter((r: any) => !!finEstMap[r.lic])
     if (!filtro) return rows
     const q = filtro.toLowerCase()
     return rows.filter((r: any) =>
@@ -140,7 +151,7 @@ export default function SourcingPlan() {
       String(r.lic             ?? '').toLowerCase().includes(q) ||
       String(r.estado_contrato ?? '').toLowerCase().includes(q)
     )
-  }, [tabla, filtro])
+  }, [tabla, filtro, filtroProyecto, filtroEstado, filtroTipo, soloConFinEst, finEstMap])
 
   if (!kpis) return <div className="p-6 text-gray-400 text-sm">Cargando...</div>
 
@@ -179,9 +190,21 @@ export default function SourcingPlan() {
             {opts.map(o => <option key={o} value={o}>{o}</option>)}
           </select>
         ))}
-        {(filtro || filtroProyecto || filtroEstado || filtroTipo) && (
+        <button
+          onClick={() => setSoloConFinEst(v => !v)}
+          style={{
+            fontSize: 12, padding: '4px 10px', borderRadius: 4, cursor: 'pointer', fontWeight: 600,
+            border: '1px solid', whiteSpace: 'nowrap',
+            borderColor: soloConFinEst ? '#a5b4fc' : 'var(--gray-200)',
+            background:  soloConFinEst ? '#ede9fe' : '#fff',
+            color:       soloConFinEst ? '#5b21b6' : '#6b7280',
+          }}
+        >
+          {soloConFinEst ? '✓ Con fin est.' : 'Con fin est.'}
+        </button>
+        {(filtro || filtroProyecto || filtroEstado || filtroTipo || soloConFinEst) && (
           <button className="btn btn-ghost" style={{ fontSize: 12 }}
-            onClick={() => { setFiltro(''); setFiltroProyecto(''); setFiltroEstado(''); setFiltroTipo('') }}>
+            onClick={() => { setFiltro(''); setFiltroProyecto(''); setFiltroEstado(''); setFiltroTipo(''); setSoloConFinEst(false) }}>
             ✕ Limpiar
           </button>
         )}
@@ -391,6 +414,7 @@ export default function SourcingPlan() {
                       <th className="px-3 py-2.5 text-left">Alcance</th>
                       <th className="px-3 py-2.5 text-left">Contrato</th>
                       <th className="px-3 py-2.5 text-left">Licitación</th>
+                      <th className="px-3 py-2.5 text-right">Fin Est. Lic.</th>
                       <th className="px-3 py-2.5 text-left">Empresa</th>
                       <th className="px-3 py-2.5 text-left">Tipo</th>
                       <th className="px-3 py-2.5 text-left">Inicio</th>
@@ -419,6 +443,9 @@ export default function SourcingPlan() {
                         <td className="px-3 py-2 max-w-[130px] truncate text-gray-500" title={r.alcance}>{r.alcance || '—'}</td>
                         <td className="px-3 py-2 font-mono text-blue-600">{r.contrato || '—'}</td>
                         <td className="px-3 py-2 font-mono text-gray-500">{r.lic || '—'}</td>
+                        <td className="px-3 py-2 text-right tabular-nums" style={{ color: finEstMap[r.lic] ? '#7c3aed' : '#9ca3af', fontStyle: finEstMap[r.lic] ? 'italic' : 'normal', whiteSpace: 'nowrap' }}>
+                          {finEstMap[r.lic] || '—'}
+                        </td>
                         <td className="px-3 py-2 max-w-[120px] truncate text-gray-500" title={r.empresa}>{r.empresa || '—'}</td>
                         <td className="px-3 py-2 text-gray-500">{r.tipo || '—'}</td>
                         <td className="px-3 py-2 text-gray-500">{r.inicio || '—'}</td>

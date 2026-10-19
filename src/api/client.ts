@@ -19,7 +19,8 @@ export const getLicitPorAnio     = ()      => api.get('/licitaciones/por-anio').
 export const getLicitTabla       = (p: object) => api.get('/licitaciones/tabla', { params: p }).then(r => r.data)
 export const getLicitProcesosKpis = ()    => api.get('/licitaciones/procesos/kpis').then(r => r.data)
 export const getLicitProcesos    = (p?: object) => api.get('/licitaciones/procesos', { params: p }).then(r => r.data)
-export const getLicitProcesoDetalle = (proceso: string) => api.get('/licitaciones/procesos/detalle', { params: { proceso } }).then(r => r.data)
+export const getLicitProcesoDetalle  = (proceso: string) => api.get('/licitaciones/procesos/detalle', { params: { proceso } }).then(r => r.data)
+export const getLicitAllSubelementos = ()                => api.get('/licitaciones/procesos/subelementos').then(r => r.data)
 
 export const getAlertasKpis   = ()      => api.get('/alertas/kpis').then(r => r.data)
 export const getAlertasContratos = ()   => api.get('/alertas/contratos').then(r => r.data)
