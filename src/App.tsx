@@ -3,6 +3,7 @@ import Layout from './components/Layout'
 import Home from './pages/Home'
 import SaldoContratos from './pages/SaldoContratos'
 import Licitaciones from './pages/Licitaciones'
+import Solpes from './pages/Solpes'
 import Alertas from './pages/Alertas'
 import Proyecciones from './pages/Proyecciones'
 import Placeholder from './pages/Placeholder'
@@ -29,6 +30,7 @@ export default function App() {
           <Route path="analisis"      element={<AnalisisProyecto />} />
           <Route path="sourcing"      element={<SourcingPlan />} />
           <Route path="licitaciones"  element={<Licitaciones />} />
+          <Route path="solpes"        element={<Solpes />} />
           <Route path="alertas"       element={<Alertas />} />
           <Route path="simulacion"    element={<Simulacion />} />
           <Route path="carga"            element={<CargaDatos />} />

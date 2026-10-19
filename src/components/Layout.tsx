@@ -112,6 +112,7 @@ const NAV: Entry[] = [
   { to: '/alertas',          label: 'Alertas',           icon: <IconBell /> },
   { section: 'DAB' },
   { to: '/licitaciones',   label: 'Licitaciones',    icon: <IconList /> },
+  { to: '/solpes',         label: 'SOLPEs',          icon: <IconList /> },
   { to: '/dashboard-dab',  label: 'Dashboard DAB',   icon: <IconClock /> },
   { to: '/modificaciones', label: 'Modificaciones',  icon: <IconMonday /> },
   { section: 'DPO' },

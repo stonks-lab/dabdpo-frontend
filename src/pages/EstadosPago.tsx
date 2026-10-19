@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip,
   ResponsiveContainer, CartesianGrid,
@@ -37,8 +37,6 @@ const PIE_COLORS = [
   '#9333ea', '#0891b2', '#ea580c', '#6b7280', '#84cc16',
 ]
 
-// Color de celda EP: blanco si 0, azul suave gradual por monto
-// Rango: #f0f9ff (bajo) → #7dd3fc (alto) — escala sky ligera
 function epCellBg(v: number, maxVal: number): string {
   if (v <= 0 || maxVal <= 0) return 'transparent'
   const ratio = Math.min(v / maxVal, 1)
@@ -48,15 +46,16 @@ function epCellBg(v: number, maxVal: number): string {
   return `rgb(${r},${g},${b})`
 }
 
+// Columnas fijas de la tabla timeline — con columna de toggle al inicio
 const TL_STICKY: { label: string; left: number; minW: number; align: 'left' | 'right' }[] = [
-  { label: 'Contrato',    left: 0,   minW: 84,  align: 'left'  },
-  { label: 'Descripción', left: 84,  minW: 155, align: 'left'  },
-  { label: 'Área',        left: 239, minW: 75,  align: 'left'  },
-  { label: 'Total EP',    left: 314, minW: 86,  align: 'right' },
-  { label: 'N° EPs',      left: 400, minW: 60,  align: 'right' },
+  { label: '',            left: 0,   minW: 28,  align: 'left'  },
+  { label: 'Contrato',    left: 28,  minW: 84,  align: 'left'  },
+  { label: 'Descripción', left: 112, minW: 155, align: 'left'  },
+  { label: 'Área',        left: 267, minW: 75,  align: 'left'  },
+  { label: 'Total EP',    left: 342, minW: 86,  align: 'right' },
+  { label: 'N° EPs',      left: 428, minW: 60,  align: 'right' },
 ]
 
-// Custom tick for Top 10 bar charts — shows code + description below
 const makeContractTick = (lookup: Record<string, string>) =>
   function ContractTick({ x, y, payload }: any) {
     const code = payload?.value ?? ''
@@ -68,6 +67,18 @@ const makeContractTick = (lookup: Record<string, string>) =>
       </g>
     )
   }
+
+// ── ExpandIcon ────────────────────────────────────────────────────────────────
+
+const ExpandIcon = ({ open }: { open: boolean }) => (
+  <svg
+    width="10" height="10" viewBox="0 0 10 10" fill="none"
+    stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"
+    style={{ transition: 'transform 0.15s', transform: open ? 'rotate(90deg)' : 'rotate(0deg)' }}
+  >
+    <polyline points="3 2 7 5 3 8" />
+  </svg>
+)
 
 // ── componente ────────────────────────────────────────────────────────────────
 
@@ -83,6 +94,10 @@ export default function EstadosPago() {
     contrato: '', area: '', tipo: '', estado_ctt: '', proyecto: '', periodo_desde: '', periodo_hasta: '',
   })
 
+  // Estado de expansión: contratos → proyectos → descripciones
+  const [expandedCtts,      setExpandedCtts]      = useState<Set<string>>(new Set())
+  const [expandedProyectos, setExpandedProyectos] = useState<Set<string>>(new Set())
+
   const hasFilters = Object.values(filters).some(Boolean)
 
   useEffect(() => {
@@ -96,14 +111,13 @@ export default function EstadosPago() {
     getEpPorTipoDetalle(p).then(setPorTipo).catch(() => {})
     setTlLoading(true)
     getEpTimeline(p)
-      .then(setTimeline)
+      .then(data => { setTimeline(data); setExpandedCtts(new Set()); setExpandedProyectos(new Set()) })
       .catch(() => setTimeline(null))
       .finally(() => setTlLoading(false))
   }, [filters])
 
   const setFilter = (k: string, v: string) => setFilters(f => ({ ...f, [k]: v }))
 
-  // Valor máximo por mes para escala de color
   const maxEpGlobal = useMemo(() => {
     if (!timeline?.contratos) return 1
     let max = 0
@@ -136,16 +150,51 @@ export default function EstadosPago() {
     Object.fromEntries((timeline?.contratos ?? []).map((c: any) => [c.codigo_ctt, c.descripcion ?? '']))
   , [timeline])
 
+  // ── helpers de expansión ─────────────────────────────────────────────────
+
+  const toggleCtt = (ctt: string) =>
+    setExpandedCtts(prev => { const s = new Set(prev); s.has(ctt) ? s.delete(ctt) : s.add(ctt); return s })
+
+  const toggleProy = (key: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setExpandedProyectos(prev => { const s = new Set(prev); s.has(key) ? s.delete(key) : s.add(key); return s })
+  }
+
+  const allCodes: string[] = useMemo(
+    () => (timeline?.contratos ?? []).map((c: any) => c.codigo_ctt),
+    [timeline]
+  )
+
+  const allExpanded = allCodes.length > 0 && allCodes.every(c => expandedCtts.has(c))
+
+  const toggleAllCtts = () =>
+    setExpandedCtts(allExpanded ? new Set() : new Set(allCodes))
+
+  // ── exportar Excel con desglose por proyecto ─────────────────────────────
+
   const exportEP = () => {
     if (!timeline) return
-    const headers = ['Contrato', 'Descripción', 'Área', 'Total EP', 'N° EPs', ...timeline.meses]
-    const rows = timeline.contratos.map((c: any) => [
-      c.codigo_ctt, c.descripcion, c.area, c.total_ep, c.num_eps, ...c.eps,
-    ])
+    const monthCols = timeline.meses as string[]
+    const headers = ['Contrato', 'Proyecto', 'Descripción contrato', 'Área', 'Total EP', 'N° EPs', ...monthCols.map(fmtMes)]
+    const rows: any[][] = []
+    for (const ctt of timeline.contratos) {
+      const proyectos: any[] = ctt.proyectos ?? []
+      if (proyectos.length === 0) {
+        rows.push([ctt.codigo_ctt, '', ctt.descripcion, ctt.area, ctt.total_ep, ctt.num_eps, ...ctt.eps])
+      } else {
+        for (const pr of proyectos) {
+          rows.push([ctt.codigo_ctt, pr.proyecto, ctt.descripcion, ctt.area, pr.total_ep, pr.num_eps, ...pr.eps])
+        }
+      }
+    }
     const wb = XLSX.utils.book_new()
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows])
-    XLSX.utils.book_append_sheet(wb, ws, 'EP')
-    XLSX.writeFile(wb, 'ep_por_contrato.xlsx')
+    ws['!cols'] = [
+      { wch: 14 }, { wch: 40 }, { wch: 40 }, { wch: 14 }, { wch: 14 }, { wch: 8 },
+      ...monthCols.map(() => ({ wch: 10 })),
+    ]
+    XLSX.utils.book_append_sheet(wb, ws, 'EP por Proyecto')
+    XLSX.writeFile(wb, 'ep_por_proyecto.xlsx')
   }
 
   if (!kpis) return (
@@ -218,10 +267,10 @@ export default function EstadosPago() {
           </div>
         )}
 
-        {/* ── Timeline EP por Contrato ──────────────────────────────────────── */}
+        {/* ── Timeline EP por Contrato (con desglose por proyecto) ─────────── */}
         <div className="panel" style={{ padding: 0 }}>
 
-          {/* Cabecera del panel */}
+          {/* Cabecera */}
           <div style={{
             padding: '10px 16px',
             borderBottom: '1px solid var(--gray-200)',
@@ -231,17 +280,19 @@ export default function EstadosPago() {
               EP por Contrato y Período
             </span>
             {timeline && (
-              <span style={{ fontSize: 11, color: '#9aa1b3' }}>
-                ordenados por EP total
-              </span>
+              <span style={{ fontSize: 11, color: '#9aa1b3' }}>ordenados por EP total</span>
             )}
-            <button
-              className="btn btn-ghost"
-              style={{ fontSize: 11, padding: '2px 9px' }}
-              onClick={exportEP}
-              title="Descargar Excel"
-              disabled={!timeline}
-            >⬇ Excel</button>
+
+            {/* Expandir / colapsar todos */}
+            {allCodes.length > 0 && (
+              <button
+                className="btn btn-ghost"
+                style={{ fontSize: 11, padding: '2px 9px' }}
+                onClick={toggleAllCtts}
+              >
+                {allExpanded ? '⊟ Colapsar proyectos' : '⊞ Expandir proyectos'}
+              </button>
+            )}
 
             {/* Leyenda de color */}
             <div style={{ display: 'flex', gap: 10, marginLeft: 'auto', alignItems: 'center' }}>
@@ -264,13 +315,12 @@ export default function EstadosPago() {
               Calculando EP por período…
             </div>
           ) : timeline ? (
-            <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 420 }}>
+            <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 480 }}>
               <table style={{ borderCollapse: 'separate', borderSpacing: 0, fontSize: 11 }}>
                 <thead>
                   <tr>
-                    {/* Columnas fijas */}
                     {TL_STICKY.map((col, ci) => (
-                      <th key={col.label}
+                      <th key={col.label + ci}
                         style={{
                           position: 'sticky', top: 0, left: col.left, zIndex: 5,
                           minWidth: col.minW, padding: '7px 8px',
@@ -282,7 +332,6 @@ export default function EstadosPago() {
                         {col.label}
                       </th>
                     ))}
-                    {/* Columnas de meses */}
                     {timeline.meses.map((m: string) => (
                       <th key={m}
                         style={{
@@ -303,51 +352,119 @@ export default function EstadosPago() {
                 <tbody>
                   {timeline.contratos.map((ctt: any) => {
                     const bd = '1px solid #f0f0f0'
+                    const isCttOpen = expandedCtts.has(ctt.codigo_ctt)
+                    const hasProyectos = (ctt.proyectos?.length ?? 0) > 0
+
                     return (
-                      <tr key={ctt.codigo_ctt}>
-                        <td style={{ position: 'sticky', left: 0, zIndex: 2, background: '#fff', padding: '5px 8px', fontFamily: 'monospace', fontWeight: 600, fontSize: 10, borderBottom: bd }}>
-                          {ctt.codigo_ctt}
-                        </td>
-                        <td style={{ position: 'sticky', left: 84, zIndex: 2, background: '#fff', padding: '5px 8px', maxWidth: 155, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', borderBottom: bd }}
-                          title={ctt.descripcion}>
-                          {ctt.descripcion}
-                        </td>
-                        <td style={{ position: 'sticky', left: 239, zIndex: 2, background: '#fff', padding: '5px 8px', fontSize: 10, color: '#9aa1b3', borderBottom: bd }}>
-                          {ctt.area}
-                        </td>
-                        <td style={{ position: 'sticky', left: 314, zIndex: 2, background: '#fff', padding: '5px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600, borderBottom: bd }}>
-                          {fmtMM(ctt.total_ep)}
-                        </td>
-                        <td style={{
-                          position: 'sticky', left: 400, zIndex: 2, background: '#fff',
-                          padding: '5px 8px', textAlign: 'right',
-                          boxShadow: '3px 0 6px rgba(0,0,0,.07)', borderBottom: bd,
-                        }}>
-                          {ctt.num_eps}
-                        </td>
-                        {/* Celdas de meses */}
-                        {timeline.meses.map((m: string, mi: number) => {
-                          const v = ctt.eps[mi] ?? 0
-                          const bg = epCellBg(v, maxEpGlobal)
+                      <Fragment key={ctt.codigo_ctt}>
+                        {/* ── Fila contrato ── */}
+                        <tr
+                          style={{ cursor: hasProyectos ? 'pointer' : 'default' }}
+                          onClick={() => hasProyectos && toggleCtt(ctt.codigo_ctt)}
+                        >
+                          <td style={{ position: 'sticky', left: 0, zIndex: 2, background: '#fff', padding: '5px 6px', textAlign: 'center', borderBottom: bd, color: '#9aa1b3' }}>
+                            {hasProyectos && <ExpandIcon open={isCttOpen} />}
+                          </td>
+                          <td style={{ position: 'sticky', left: 28, zIndex: 2, background: '#fff', padding: '5px 8px', fontFamily: 'monospace', fontWeight: 600, fontSize: 10, borderBottom: bd }}>
+                            {ctt.codigo_ctt}
+                          </td>
+                          <td style={{ position: 'sticky', left: 112, zIndex: 2, background: '#fff', padding: '5px 8px', maxWidth: 155, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', borderBottom: bd }} title={ctt.descripcion}>
+                            {ctt.descripcion}
+                          </td>
+                          <td style={{ position: 'sticky', left: 267, zIndex: 2, background: '#fff', padding: '5px 8px', fontSize: 10, color: '#9aa1b3', borderBottom: bd }}>
+                            {ctt.area}
+                          </td>
+                          <td style={{ position: 'sticky', left: 342, zIndex: 2, background: '#fff', padding: '5px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600, borderBottom: bd }}>
+                            {fmtMM(ctt.total_ep)}
+                          </td>
+                          <td style={{ position: 'sticky', left: 428, zIndex: 2, background: '#fff', padding: '5px 8px', textAlign: 'right', boxShadow: '3px 0 6px rgba(0,0,0,.07)', borderBottom: bd }}>
+                            {ctt.num_eps}
+                          </td>
+                          {timeline.meses.map((m: string, mi: number) => {
+                            const v = ctt.eps[mi] ?? 0
+                            return (
+                              <td key={m} style={{ minWidth: 60, padding: '5px 5px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 10, background: epCellBg(v, maxEpGlobal), borderLeft: m === timeline.mes_actual ? '2px solid #93c5fd' : undefined, borderBottom: bd, color: v > 0 ? 'var(--navy-500)' : '#d1d5db' }} title={v > 0 ? `${ctt.codigo_ctt} · ${m}: ${clp(v)}` : undefined}>
+                                {v > 0 ? fmtMM(v) : '—'}
+                              </td>
+                            )
+                          })}
+                        </tr>
+
+                        {/* ── Filas proyecto (nivel 1) ── */}
+                        {isCttOpen && (ctt.proyectos ?? []).map((pr: any) => {
+                          const proyKey = `${ctt.codigo_ctt}__${pr.proyecto}`
+                          const isProyOpen = expandedProyectos.has(proyKey)
+                          const hasDescs = (pr.descripciones?.length ?? 0) > 0
+                          const bgP = '#f0f7ff'
+
                           return (
-                            <td key={m}
-                              style={{
-                                minWidth: 60, padding: '5px 5px',
-                                textAlign: 'right',
-                                fontVariantNumeric: 'tabular-nums',
-                                fontSize: 10,
-                                background: bg,
-                                borderLeft: m === timeline.mes_actual ? '2px solid #93c5fd' : undefined,
-                                borderBottom: bd,
-                                color: v > 0 ? 'var(--navy-500)' : '#d1d5db',
-                              }}
-                              title={v > 0 ? `${ctt.codigo_ctt} · ${m}: ${clp(v)}` : undefined}
-                            >
-                              {v > 0 ? fmtMM(v) : '—'}
-                            </td>
+                            <Fragment key={proyKey}>
+                              <tr style={{ background: bgP, cursor: hasDescs ? 'pointer' : 'default' }} onClick={hasDescs ? (e) => toggleProy(proyKey, e) : undefined}>
+                                {/* toggle descripción */}
+                                <td style={{ position: 'sticky', left: 0, zIndex: 2, background: bgP, padding: '4px 6px', textAlign: 'center', borderBottom: bd, color: '#9aa1b3' }}>
+                                  {hasDescs && <ExpandIcon open={isProyOpen} />}
+                                </td>
+                                {/* ↳ en columna contrato */}
+                                <td style={{ position: 'sticky', left: 28, zIndex: 2, background: bgP, padding: '4px 8px', fontSize: 11, fontWeight: 700, color: '#c9a84c', borderBottom: bd, whiteSpace: 'nowrap' }}>
+                                  ↳
+                                </td>
+                                {/* nombre proyecto */}
+                                <td style={{ position: 'sticky', left: 112, zIndex: 2, background: bgP, padding: '4px 8px', fontSize: 10, color: '#374151', fontWeight: 500, borderBottom: bd, whiteSpace: 'nowrap', maxWidth: 155, overflow: 'hidden', textOverflow: 'ellipsis' }} title={pr.proyecto}>
+                                  {pr.proyecto || '(sin proyecto)'}
+                                </td>
+                                <td style={{ position: 'sticky', left: 267, zIndex: 2, background: bgP, borderBottom: bd }} />
+                                <td style={{ position: 'sticky', left: 342, zIndex: 2, background: bgP, padding: '4px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 10, color: '#1e3a5f', fontWeight: 600, borderBottom: bd }}>
+                                  {fmtMM(pr.total_ep)}
+                                </td>
+                                <td style={{ position: 'sticky', left: 428, zIndex: 2, background: bgP, padding: '4px 8px', textAlign: 'right', fontSize: 10, color: '#9aa1b3', boxShadow: '3px 0 6px rgba(0,0,0,.05)', borderBottom: bd }}>
+                                  {pr.num_eps}
+                                </td>
+                                {timeline.meses.map((m: string, mi: number) => {
+                                  const v = pr.eps[mi] ?? 0
+                                  return (
+                                    <td key={m} style={{ minWidth: 60, padding: '4px 5px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 10, background: v > 0 ? epCellBg(v, maxEpGlobal) : bgP, borderLeft: m === timeline.mes_actual ? '2px solid #93c5fd' : undefined, borderBottom: bd, color: v > 0 ? '#1e40af' : '#d1d5db' }} title={v > 0 ? `${pr.proyecto} · ${m}: ${clp(v)}` : undefined}>
+                                      {v > 0 ? fmtMM(v) : '—'}
+                                    </td>
+                                  )
+                                })}
+                              </tr>
+
+                              {/* ── Filas descripción (nivel 2) ── */}
+                              {isProyOpen && (pr.descripciones ?? []).map((desc: any, di: number) => {
+                                const bgD = '#f0f4ff'
+                                return (
+                                  <tr key={`${proyKey}__${di}`} style={{ background: bgD }}>
+                                    <td style={{ position: 'sticky', left: 0, zIndex: 2, background: bgD, borderBottom: bd }} />
+                                    {/* ↳ indentado en columna contrato */}
+                                    <td style={{ position: 'sticky', left: 28, zIndex: 2, background: bgD, padding: '3px 8px 3px 18px', fontSize: 10, color: '#c9a84c', borderBottom: bd, whiteSpace: 'nowrap' }}>
+                                      ↳
+                                    </td>
+                                    {/* descripción */}
+                                    <td style={{ position: 'sticky', left: 112, zIndex: 2, background: bgD, padding: '3px 8px', fontSize: 10, color: '#4b5563', borderBottom: bd, whiteSpace: 'nowrap', maxWidth: 155, overflow: 'hidden', textOverflow: 'ellipsis' }} title={desc.descripcion}>
+                                      {desc.descripcion || '—'}
+                                    </td>
+                                    <td style={{ position: 'sticky', left: 267, zIndex: 2, background: bgD, borderBottom: bd }} />
+                                    <td style={{ position: 'sticky', left: 342, zIndex: 2, background: bgD, padding: '3px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 10, color: '#374151', borderBottom: bd }}>
+                                      {fmtMM(desc.total_ep)}
+                                    </td>
+                                    <td style={{ position: 'sticky', left: 428, zIndex: 2, background: bgD, padding: '3px 8px', textAlign: 'right', fontSize: 10, color: '#9aa1b3', boxShadow: '3px 0 6px rgba(0,0,0,.04)', borderBottom: bd }}>
+                                      {desc.num_eps}
+                                    </td>
+                                    {timeline.meses.map((m: string, mi: number) => {
+                                      const v = desc.eps[mi] ?? 0
+                                      return (
+                                        <td key={m} style={{ minWidth: 60, padding: '3px 5px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 10, background: v > 0 ? epCellBg(v, maxEpGlobal) : bgD, borderLeft: m === timeline.mes_actual ? '2px solid #93c5fd' : undefined, borderBottom: bd, color: v > 0 ? '#374151' : '#d1d5db' }} title={v > 0 ? `${desc.descripcion} · ${m}: ${clp(v)}` : undefined}>
+                                          {v > 0 ? fmtMM(v) : '—'}
+                                        </td>
+                                      )
+                                    })}
+                                  </tr>
+                                )
+                              })}
+                            </Fragment>
                           )
                         })}
-                      </tr>
+                      </Fragment>
                     )
                   })}
                   {timeline.contratos.length === 0 && (
@@ -389,7 +506,6 @@ export default function EstadosPago() {
         )}
 
         <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr 1fr', gap: 16 }}>
-
           {porTipo.length > 0 && (
             <div className="panel">
               <h2>Por tipo de contrato</h2>
@@ -401,10 +517,7 @@ export default function EstadosPago() {
                     labelLine={false}>
                     {porTipo.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
                   </Pie>
-                  <Tooltip
-                    formatter={(v: number, name: string) => [clp(v), name]}
-                    contentStyle={{ fontSize: 11 }}
-                  />
+                  <Tooltip formatter={(v: number, name: string) => [clp(v), name]} contentStyle={{ fontSize: 11 }} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
@@ -444,6 +557,106 @@ export default function EstadosPago() {
             </div>
           )}
         </div>
+
+        {/* ── Tabla plana contrato-proyecto (vista Excel) ──────────────────── */}
+        {timeline && (
+          <div className="panel" style={{ padding: 0 }}>
+
+            {/* Cabecera */}
+            <div style={{
+              padding: '10px 16px',
+              borderBottom: '1px solid var(--gray-200)',
+              display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+            }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--navy-500)' }}>
+                Detalle por Proyecto — vista Excel
+              </span>
+              <span style={{ fontSize: 11, color: '#9aa1b3' }}>
+                una fila por combinación contrato-proyecto
+              </span>
+              <button
+                className="btn btn-primary"
+                style={{ fontSize: 11, padding: '3px 12px', marginLeft: 'auto' }}
+                onClick={exportEP}
+              >
+                ⬇ Descargar Excel
+              </button>
+            </div>
+
+            {/* Tabla plana sin expand — orientada a Excel */}
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ borderCollapse: 'collapse', fontSize: 11, width: '100%' }}>
+                <thead>
+                  <tr style={{ background: '#1e3a5f', color: '#fff' }}>
+                    <th style={{ padding: '7px 8px', textAlign: 'left', whiteSpace: 'nowrap' }}>Contrato</th>
+                    <th style={{ padding: '7px 8px', textAlign: 'left', minWidth: 180 }}>Proyecto</th>
+                    <th style={{ padding: '7px 8px', textAlign: 'left', minWidth: 180 }}>Descripción contrato</th>
+                    <th style={{ padding: '7px 8px', textAlign: 'left', whiteSpace: 'nowrap' }}>Área</th>
+                    <th style={{ padding: '7px 8px', textAlign: 'right', whiteSpace: 'nowrap' }}>Total EP</th>
+                    <th style={{ padding: '7px 8px', textAlign: 'right', whiteSpace: 'nowrap' }}>N° EPs</th>
+                    {timeline.meses.map((m: string) => (
+                      <th key={m} style={{
+                        padding: '7px 4px', textAlign: 'center', minWidth: 58, whiteSpace: 'nowrap',
+                        background: m === timeline.mes_actual ? '#1e40af' : undefined,
+                      }}>
+                        {fmtMes(m)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {timeline.contratos.flatMap((ctt: any, ci: number) => {
+                    const proyectos: any[] = ctt.proyectos ?? []
+                    const rowsBg = ci % 2 === 0 ? '#fff' : '#f9fafb'
+                    const bd = '1px solid #e5e7eb'
+
+                    // Sin proyectos: una fila con proyecto vacío
+                    if (proyectos.length === 0) {
+                      return [(
+                        <tr key={ctt.codigo_ctt} style={{ background: rowsBg }}>
+                          <td style={{ padding: '5px 8px', fontFamily: 'monospace', fontWeight: 700, fontSize: 10, borderBottom: bd, whiteSpace: 'nowrap' }}>{ctt.codigo_ctt}</td>
+                          <td style={{ padding: '5px 8px', fontSize: 10, color: '#9aa1b3', borderBottom: bd }}>—</td>
+                          <td style={{ padding: '5px 8px', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', borderBottom: bd }} title={ctt.descripcion}>{ctt.descripcion}</td>
+                          <td style={{ padding: '5px 8px', fontSize: 10, color: '#6b7280', borderBottom: bd, whiteSpace: 'nowrap' }}>{ctt.area}</td>
+                          <td style={{ padding: '5px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700, borderBottom: bd, whiteSpace: 'nowrap' }}>{fmtMM(ctt.total_ep)}</td>
+                          <td style={{ padding: '5px 8px', textAlign: 'right', borderBottom: bd }}>{ctt.num_eps}</td>
+                          {timeline.meses.map((m: string, mi: number) => {
+                            const v = ctt.eps[mi] ?? 0
+                            return (
+                              <td key={m} style={{ padding: '5px 5px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 10, background: v > 0 ? epCellBg(v, maxEpGlobal) : rowsBg, borderLeft: m === timeline.mes_actual ? '2px solid #93c5fd' : undefined, borderBottom: bd, color: v > 0 ? 'var(--navy-500)' : '#d1d5db' }} title={v > 0 ? clp(v) : undefined}>
+                                {v > 0 ? fmtMM(v) : '—'}
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      )]
+                    }
+
+                    // Con proyectos: una fila por proyecto
+                    return proyectos.map((pr: any, pi: number) => (
+                      <tr key={`${ctt.codigo_ctt}__${pi}`} style={{ background: rowsBg }}>
+                        <td style={{ padding: '5px 8px', fontFamily: 'monospace', fontWeight: 700, fontSize: 10, borderBottom: bd, whiteSpace: 'nowrap', color: pi === 0 ? '#1e3a5f' : '#6b7280' }}>{ctt.codigo_ctt}</td>
+                        <td style={{ padding: '5px 8px', fontSize: 10, color: '#374151', fontWeight: 500, borderBottom: bd, whiteSpace: 'nowrap', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }} title={pr.proyecto}>{pr.proyecto || '—'}</td>
+                        <td style={{ padding: '5px 8px', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', borderBottom: bd, color: '#9aa1b3', fontSize: 10 }} title={ctt.descripcion}>{pi === 0 ? ctt.descripcion : ''}</td>
+                        <td style={{ padding: '5px 8px', fontSize: 10, color: '#6b7280', borderBottom: bd, whiteSpace: 'nowrap' }}>{pi === 0 ? ctt.area : ''}</td>
+                        <td style={{ padding: '5px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600, borderBottom: bd, whiteSpace: 'nowrap', color: '#1e40af' }}>{fmtMM(pr.total_ep)}</td>
+                        <td style={{ padding: '5px 8px', textAlign: 'right', fontSize: 10, color: '#9aa1b3', borderBottom: bd }}>{pr.num_eps}</td>
+                        {timeline.meses.map((m: string, mi: number) => {
+                          const v = pr.eps[mi] ?? 0
+                          return (
+                            <td key={m} style={{ padding: '5px 5px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 10, background: v > 0 ? epCellBg(v, maxEpGlobal) : rowsBg, borderLeft: m === timeline.mes_actual ? '2px solid #93c5fd' : undefined, borderBottom: bd, color: v > 0 ? '#1e40af' : '#d1d5db' }} title={v > 0 ? `${pr.proyecto} · ${m}: ${clp(v)}` : undefined}>
+                              {v > 0 ? fmtMM(v) : '—'}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    ))
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
       </div>
     </>
