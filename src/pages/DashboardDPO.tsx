@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   LineChart, Line, BarChart, Bar,
   XAxis, YAxis, Tooltip,
@@ -55,13 +55,24 @@ function MetricCard({ label, value, valueColor, meta, metaLabel, sub }: {
   )
 }
 
+// Convierte "YYYY-MM" → número comparable: 202401
+function toYM(s: string): number {
+  if (!s) return 0
+  const [y, m] = s.split('-')
+  return parseInt(y) * 100 + parseInt(m)
+}
+
 export default function DashboardDPO() {
+  // ── State ──────────────────────────────────────────────────────────────────
   const [dpo,           setDpo]           = useState<{ historico: RowCM[]; ultimo: RowCM | null; config: Config } | null>(null)
   const [loading,       setLoading]       = useState(true)
   const [error,         setError]         = useState('')
   const [confirmDelete, setConfirmDelete] = useState<{ anio: number; mes: number } | null>(null)
   const [deleting,      setDeleting]      = useState(false)
+  const [fechaDesde,    setFechaDesde]    = useState('')
+  const [fechaHasta,    setFechaHasta]    = useState('')
 
+  // ── Load ───────────────────────────────────────────────────────────────────
   const load = useCallback(() => {
     setLoading(true)
     getDpoCostoMetro()
@@ -84,36 +95,56 @@ export default function DashboardDPO() {
     }
   }
 
+  // ── Datos base (seguros aunque dpo sea null) ───────────────────────────────
+  const historico = dpo?.historico ?? []
+  const config    = dpo?.config    ?? { meta_costo_metro: null, meta_tolerancia_brecha: null }
+
+  // ── Filtrado — useMemo ANTES de cualquier early return ────────────────────
+  const historicoFiltrado = useMemo(() => {
+    const desde = toYM(fechaDesde)
+    const hasta = toYM(fechaHasta)
+    if (!desde && !hasta) return historico
+    return historico.filter(r => {
+      const ym = r.anio * 100 + r.mes
+      if (desde && ym < desde) return false
+      if (hasta && ym > hasta) return false
+      return true
+    })
+  }, [historico, fechaDesde, fechaHasta])
+
+  // ── Early returns (después de todos los hooks) ────────────────────────────
   if (loading) return <div className="loading">Cargando Dashboard DPO...</div>
   if (error)   return <><PageHeader title="Dashboard DPO" icon="📐" /><div className="page"><div className="alert-banner">{error}</div></div></>
 
-  const historico = dpo?.historico ?? []
-  const ultimo    = dpo?.ultimo    ?? null
-  const config    = dpo?.config    ?? { meta_costo_metro: null, meta_tolerancia_brecha: null }
+  // ── Valores derivados de historico filtrado ────────────────────────────────
+  const hayFiltro  = fechaDesde !== '' || fechaHasta !== ''
+  const ultimoFilt = historicoFiltrado.length > 0
+    ? historicoFiltrado[historicoFiltrado.length - 1]
+    : null
 
-  const serieLine = historico.map(r => ({
+  const serieLine = historicoFiltrado.map(r => ({
     label:    `${MES_ABREV[r.mes]} ${r.anio}`,
     real:     r.costo_metro_real,
     ajustado: r.costo_metro_ajustado,
   }))
 
-  const serieBars = historico.map(r => ({
+  const serieBars = historicoFiltrado.map(r => ({
     label:      MES_ABREV[r.mes],
     programado: r.costo_metro_programado,
     ajustado:   r.costo_metro_ajustado,
   }))
 
   const realColor = () => {
-    if (!ultimo) return 'var(--gray-400)'
+    if (!ultimoFilt) return 'var(--gray-400)'
     if (!config.meta_costo_metro) return 'var(--navy-500)'
-    return ultimo.costo_metro_ajustado <= config.meta_costo_metro
+    return ultimoFilt.costo_metro_ajustado <= config.meta_costo_metro
       ? 'var(--success-500)' : 'var(--error-500)'
   }
 
   const brechaColor = () => {
-    if (!ultimo) return 'var(--gray-400)'
+    if (!ultimoFilt) return 'var(--gray-400)'
     const tol = config.meta_tolerancia_brecha ?? 0.05
-    const b   = Math.abs(ultimo.brecha)
+    const b   = Math.abs(ultimoFilt.brecha)
     return b <= tol ? 'var(--success-500)' : b <= tol * 1.5 ? 'var(--warning-500)' : 'var(--error-500)'
   }
 
@@ -121,14 +152,47 @@ export default function DashboardDPO() {
     ? historico.find(r => r.anio === confirmDelete.anio && r.mes === confirmDelete.mes)
     : null
 
+  const subtitleBase = `EMSA · ${historico.length} mes${historico.length !== 1 ? 'es' : ''} cargado${historico.length !== 1 ? 's' : ''}`
+  const subtitle     = hayFiltro
+    ? `${subtitleBase} · mostrando ${historicoFiltrado.length}`
+    : subtitleBase
+
   return (
     <>
-      <PageHeader
-        title="Dashboard DPO — Costo Metro"
-        subtitle={`EMSA · ${historico.length} mes${historico.length !== 1 ? 'es' : ''} cargado${historico.length !== 1 ? 's' : ''}`}
-        icon="📐"
-      />
+      <PageHeader title="Dashboard DPO — Costo Metro" subtitle={subtitle} icon="📐" />
 
+      {/* ── Filtro de período ────────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, padding: '4px 16px 12px' }}>
+        <span style={{ fontSize: 11, color: '#374151', fontWeight: 600 }}>Período</span>
+        <input
+          type="month"
+          value={fechaDesde}
+          onChange={e => setFechaDesde(e.target.value)}
+          style={{ fontSize: 11, padding: '3px 8px', border: '1px solid #e5e7eb', borderRadius: 4, background: '#fff' }}
+        />
+        <span style={{ fontSize: 11, color: '#9ca3af' }}>—</span>
+        <input
+          type="month"
+          value={fechaHasta}
+          onChange={e => setFechaHasta(e.target.value)}
+          style={{ fontSize: 11, padding: '3px 8px', border: '1px solid #e5e7eb', borderRadius: 4, background: '#fff' }}
+        />
+        {hayFiltro && (
+          <button
+            onClick={() => { setFechaDesde(''); setFechaHasta('') }}
+            style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, border: '1px solid #fca5a5', background: '#fee2e2', color: '#dc2626', cursor: 'pointer' }}
+          >
+            ✕ Limpiar período
+          </button>
+        )}
+        {hayFiltro && (
+          <span style={{ fontSize: 11, color: '#6b7280' }}>
+            — <strong>{historicoFiltrado.length}</strong> mes{historicoFiltrado.length !== 1 ? 'es' : ''} en vista
+          </span>
+        )}
+      </div>
+
+      {/* ── Contenido ────────────────────────────────────────────────────────── */}
       {historico.length === 0 ? (
         <div className="page">
           <div className="panel" style={{ textAlign: 'center', padding: '48px 24px' }}>
@@ -139,65 +203,67 @@ export default function DashboardDPO() {
             </p>
           </div>
         </div>
+      ) : historicoFiltrado.length === 0 ? (
+        <div className="page">
+          <div className="panel" style={{ textAlign: 'center', padding: '32px 24px' }}>
+            <p style={{ fontSize: 24, marginBottom: 8 }}>🔍</p>
+            <p style={{ fontWeight: 700, color: 'var(--gray-700)', marginBottom: 6 }}>Sin datos en el período seleccionado</p>
+            <p style={{ fontSize: 12, color: 'var(--gray-400)' }}>
+              Ajusta el rango de fechas o{' '}
+              <button
+                onClick={() => { setFechaDesde(''); setFechaHasta('') }}
+                style={{ background: 'none', border: 'none', color: 'var(--navy-500)', cursor: 'pointer', fontSize: 12, fontWeight: 600, padding: 0 }}
+              >
+                limpia el filtro
+              </button>{' '}
+              para ver todos los {historico.length} meses.
+            </p>
+          </div>
+        </div>
       ) : (
         <div className="page">
 
           {/* ── KPI cards ── */}
-          {ultimo && (
+          {ultimoFilt && (
             <div style={{ display: 'flex', gap: 16 }}>
               <MetricCard
                 label="Costo Metro Ajustado"
-                value={usd(ultimo.costo_metro_ajustado)}
+                value={usd(ultimoFilt.costo_metro_ajustado)}
                 valueColor={realColor()}
-                sub={`Real/Proy: ${usd(ultimo.costo_metro_real)} · ${ultimo.mes_nombre} ${ultimo.anio}`}
+                sub={`Real/Proy: ${usd(ultimoFilt.costo_metro_real)} · ${ultimoFilt.mes_nombre} ${ultimoFilt.anio}`}
                 meta={config.meta_costo_metro != null ? `${config.meta_costo_metro.toFixed(2)} US$/m` : null}
                 metaLabel="Meta"
               />
               <MetricCard
                 label="Costo Metro Programado"
-                value={usd(ultimo.costo_metro_programado)}
+                value={usd(ultimoFilt.costo_metro_programado)}
                 valueColor="var(--navy-400)"
-                sub={`${ultimo.mes_nombre} ${ultimo.anio}`}
+                sub={`${ultimoFilt.mes_nombre} ${ultimoFilt.anio}`}
               />
               <MetricCard
                 label="Brecha"
-                value={pct(ultimo.brecha)}
+                value={pct(ultimoFilt.brecha)}
                 valueColor={brechaColor()}
-                sub={ultimo.brecha < 0 ? 'Por debajo del programa ✓' : 'Por encima del programa'}
+                sub={ultimoFilt.brecha < 0 ? 'Por debajo del programa ✓' : 'Por encima del programa'}
                 meta={config.meta_tolerancia_brecha != null ? `±${pct(config.meta_tolerancia_brecha)}` : null}
                 metaLabel="Tolerancia"
               />
             </div>
           )}
 
-          {/* ── Bar chart: Programado vs Ajustado ── */}
+          {/* ── Bar chart ── */}
           <section className="panel">
             <h2>Programado vs Ajustado por Mes (US$/m)</h2>
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={serieBars} margin={{ top: 8, right: 24, left: 8, bottom: 4 }} barGap={4}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--gray-100)" vertical={false} />
-                <XAxis
-                  dataKey="label"
-                  tick={{ fontSize: 11, fill: 'var(--gray-400)' }}
-                  axisLine={false} tickLine={false}
-                />
-                <YAxis
-                  tick={{ fontSize: 10, fill: 'var(--gray-400)' }}
-                  axisLine={false} tickLine={false}
-                  tickFormatter={v => v.toFixed(0)}
-                />
-                <Tooltip
-                  contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid var(--gray-200)' }}
-                  formatter={(v) => [`${Number(v).toFixed(2)} US$/m`]}
-                />
+                <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--gray-400)' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 10, fill: 'var(--gray-400)' }} axisLine={false} tickLine={false} tickFormatter={v => v.toFixed(0)} />
+                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid var(--gray-200)' }} formatter={(v) => [`${Number(v).toFixed(2)} US$/m`]} />
                 <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
                 {config.meta_costo_metro != null && (
-                  <ReferenceLine
-                    y={config.meta_costo_metro}
-                    stroke="var(--error-500)" strokeDasharray="5 3" strokeWidth={1.5}
-                    label={{ value: `Meta: ${config.meta_costo_metro.toFixed(0)}`, position: 'right',
-                             style: { fontSize: 10, fill: 'var(--error-500)' } }}
-                  />
+                  <ReferenceLine y={config.meta_costo_metro} stroke="var(--error-500)" strokeDasharray="5 3" strokeWidth={1.5}
+                    label={{ value: `Meta: ${config.meta_costo_metro.toFixed(0)}`, position: 'right', style: { fontSize: 10, fill: 'var(--error-500)' } }} />
                 )}
                 <Bar dataKey="programado" name="Programado" fill="var(--navy-300)" radius={[3,3,0,0]} maxBarSize={40} />
                 <Bar dataKey="ajustado"   name="Ajustado"   fill="var(--gold-500)"  radius={[3,3,0,0]} maxBarSize={40} />
@@ -205,7 +271,7 @@ export default function DashboardDPO() {
             </ResponsiveContainer>
           </section>
 
-          {/* ── Line chart: evolución ── */}
+          {/* ── Line chart ── */}
           <section className="panel">
             <h2>Evolución Costo Metro (US$/m)</h2>
             <p className="subtitle">
@@ -219,50 +285,34 @@ export default function DashboardDPO() {
             <ResponsiveContainer width="100%" height={280}>
               <LineChart data={serieLine} margin={{ top: 12, right: 24, left: 8, bottom: 4 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--gray-100)" />
-                <XAxis
-                  dataKey="label"
-                  tick={{ fontSize: 11, fill: 'var(--gray-400)' }}
-                  axisLine={false} tickLine={false}
-                />
-                <YAxis
-                  tick={{ fontSize: 10, fill: 'var(--gray-400)' }}
-                  axisLine={false} tickLine={false}
+                <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--gray-400)' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 10, fill: 'var(--gray-400)' }} axisLine={false} tickLine={false}
                   tickFormatter={v => v.toFixed(0)}
-                  label={{ value: 'US$/m', angle: -90, position: 'insideLeft', offset: 14,
-                           style: { fontSize: 10, fill: 'var(--gray-400)' } }}
-                />
-                <Tooltip
-                  contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid var(--gray-200)' }}
-                  formatter={(v) => [`${Number(v).toFixed(2)} US$/m`]}
-                />
+                  label={{ value: 'US$/m', angle: -90, position: 'insideLeft', offset: 14, style: { fontSize: 10, fill: 'var(--gray-400)' } }} />
+                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid var(--gray-200)' }} formatter={(v) => [`${Number(v).toFixed(2)} US$/m`]} />
                 <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
                 {config.meta_costo_metro != null && (
-                  <ReferenceLine
-                    y={config.meta_costo_metro}
-                    stroke="var(--error-500)" strokeDasharray="5 3" strokeWidth={1.5}
-                    label={{ value: `Meta: ${config.meta_costo_metro.toFixed(0)}`, position: 'right',
-                             style: { fontSize: 10, fill: 'var(--error-500)' } }}
-                  />
+                  <ReferenceLine y={config.meta_costo_metro} stroke="var(--error-500)" strokeDasharray="5 3" strokeWidth={1.5}
+                    label={{ value: `Meta: ${config.meta_costo_metro.toFixed(0)}`, position: 'right', style: { fontSize: 10, fill: 'var(--error-500)' } }} />
                 )}
-                <Line
-                  type="monotone" dataKey="real" name="Real/Proy"
-                  stroke="var(--navy-400)" strokeWidth={2.5}
-                  dot={{ r: 4, fill: 'var(--navy-400)', strokeWidth: 0 }}
-                  activeDot={{ r: 6 }}
-                />
-                <Line
-                  type="monotone" dataKey="ajustado" name="Ajustado"
-                  stroke="var(--gold-500)" strokeWidth={2.5}
-                  dot={{ r: 4, fill: 'var(--gold-500)', strokeWidth: 0 }}
-                  activeDot={{ r: 6 }}
-                />
+                <Line type="monotone" dataKey="real" name="Real/Proy" stroke="var(--navy-400)" strokeWidth={2.5}
+                  dot={{ r: 4, fill: 'var(--navy-400)', strokeWidth: 0 }} activeDot={{ r: 6 }} />
+                <Line type="monotone" dataKey="ajustado" name="Ajustado" stroke="var(--gold-500)" strokeWidth={2.5}
+                  dot={{ r: 4, fill: 'var(--gold-500)', strokeWidth: 0 }} activeDot={{ r: 6 }} />
               </LineChart>
             </ResponsiveContainer>
           </section>
 
           {/* ── Tabla histórica ── */}
           <section className="panel">
-            <h2>Histórico Mensual</h2>
+            <h2>
+              Histórico Mensual
+              {hayFiltro && (
+                <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 400, color: 'var(--gray-400)' }}>
+                  {historicoFiltrado.length} de {historico.length} meses
+                </span>
+              )}
+            </h2>
             <div className="scroll-x">
               <table className="data-table">
                 <thead>
@@ -279,7 +329,7 @@ export default function DashboardDPO() {
                   </tr>
                 </thead>
                 <tbody>
-                  {[...historico].reverse().map(r => {
+                  {[...historicoFiltrado].reverse().map(r => {
                     const dentroMeta = config.meta_costo_metro != null && r.costo_metro_ajustado <= config.meta_costo_metro
                     const bOk        = config.meta_tolerancia_brecha == null || Math.abs(r.brecha) <= config.meta_tolerancia_brecha
                     return (
@@ -309,10 +359,7 @@ export default function DashboardDPO() {
                           <button
                             onClick={() => setConfirmDelete({ anio: r.anio, mes: r.mes })}
                             title={`Eliminar ${r.mes_nombre} ${r.anio}`}
-                            style={{
-                              background: 'none', border: 'none', cursor: 'pointer',
-                              fontSize: 13, opacity: .4, padding: '2px 4px', lineHeight: 1,
-                            }}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, opacity: .4, padding: '2px 4px', lineHeight: 1 }}
                             onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
                             onMouseLeave={e => (e.currentTarget.style.opacity = '.4')}
                           >
@@ -332,29 +379,18 @@ export default function DashboardDPO() {
 
       {/* ── Modal confirmación eliminar ── */}
       {confirmDelete && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50,
-        }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
           <div className="panel" style={{ width: 360, margin: 0, boxShadow: '0 20px 60px rgba(0,0,0,.25)' }}>
             <h2 style={{ marginBottom: 12 }}>Eliminar mes</h2>
             <p style={{ fontSize: 13, color: 'var(--gray-600)', marginBottom: 20 }}>
               ¿Eliminar{' '}
-              <strong style={{ color: 'var(--navy-500)' }}>
-                {confirmRow?.mes_nombre} {confirmDelete.anio}
-              </strong>{' '}
+              <strong style={{ color: 'var(--navy-500)' }}>{confirmRow?.mes_nombre} {confirmDelete.anio}</strong>{' '}
               de la tabla? Esta acción no se puede deshacer.
             </p>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button className="btn-ghost" onClick={() => setConfirmDelete(null)} disabled={deleting}>
-                Cancelar
-              </button>
-              <button
-                className="btn"
-                onClick={doDelete}
-                disabled={deleting}
-                style={{ background: 'var(--error-500)', borderColor: 'var(--error-500)', opacity: deleting ? .6 : 1 }}
-              >
+              <button className="btn-ghost" onClick={() => setConfirmDelete(null)} disabled={deleting}>Cancelar</button>
+              <button className="btn" onClick={doDelete} disabled={deleting}
+                style={{ background: 'var(--error-500)', borderColor: 'var(--error-500)', opacity: deleting ? .6 : 1 }}>
                 {deleting ? 'Eliminando…' : 'Sí, eliminar'}
               </button>
             </div>

@@ -161,7 +161,8 @@ export default function Solpes() {
   const [pieDesde,   setPieDesde]   = useState('')
   const [pieHasta,   setPieHasta]   = useState('')
   const [pieEstados, setPieEstados] = useState<string[]>(['En Proceso', 'Aceptada', 'Enviado a PyC', 'Rechazada'])
-  const [pieDetalle, setPieDetalle] = useState(false)
+  const [pieDetalle,    setPieDetalle]    = useState(false)
+  const [selectedForma, setSelectedForma] = useState<string | null>(null)
 
   useEffect(() => {
     getLicitTabla({}).then(setTabla).catch(() => {})
@@ -323,6 +324,18 @@ export default function Solpes() {
       .sort((a, b) => b.cantidad - a.cantidad)
   }, [tabla, pieDesde, pieHasta, pieEstados, pieDetalle])
 
+  // ── Datos donut por Forma ─────────────────────────────────────────────────
+  const formaData = useMemo(() => {
+    const counts: Record<string, number> = {}
+    tabla.forEach((r: any) => {
+      const k = r.Forma || 'Sin forma'
+      counts[k] = (counts[k] ?? 0) + 1
+    })
+    return Object.entries(counts)
+      .map(([name, cantidad]) => ({ name, cantidad }))
+      .sort((a, b) => b.cantidad - a.cantidad)
+  }, [tabla])
+
   // ── Filtro tabla ──────────────────────────────────────────────────────────
   const filtered = useMemo(() => tabla.filter((r: any) => {
     const fecha = r.Fecha_Creacion_SOLPE?.slice(0, 10) ?? ''
@@ -389,6 +402,12 @@ export default function Solpes() {
     if (!name) return
     setSelectedSlice(v => v === name ? null : name)
     setSelectedYear(null)
+  }
+
+  function handleFormaClick(data: any) {
+    const name = data?.name ?? null
+    if (!name) return
+    setSelectedForma(v => v === name ? null : name)
   }
 
   return (
@@ -535,7 +554,90 @@ export default function Solpes() {
             </PieChart>
           </ResponsiveContainer>
         </div>
+
+        {/* Donut por Forma */}
+        <div className="bg-white rounded-xl shadow-sm p-4">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+            <h2 className="text-xs font-semibold text-gray-600 uppercase tracking-wide">SOLPEs por Forma</h2>
+            {selectedForma !== null && (
+              <button onClick={() => setSelectedForma(null)}
+                style={{ fontSize: 10, padding: '1px 7px', borderRadius: 4, border: '1px solid #93c5fd', background: '#eff6ff', color: '#2563eb', cursor: 'pointer' }}>
+                {selectedForma} ✕
+              </button>
+            )}
+          </div>
+          {selectedForma === null && (
+            <span style={{ fontSize: 10, color: '#9aa1b3', display: 'block', marginBottom: 4 }}>clic en sector para ver procesos</span>
+          )}
+          <ResponsiveContainer width="100%" height={190}>
+            <PieChart>
+              <Pie data={formaData} dataKey="cantidad" nameKey="name"
+                cx="50%" cy="50%" outerRadius={72} innerRadius={28}
+                onClick={handleFormaClick} style={{ cursor: 'pointer' }}
+                label={({ percent }) => (percent ?? 0) > 0.04 ? `${((percent ?? 0) * 100).toFixed(0)}%` : ''}
+                labelLine={false}>
+                {formaData.map((e, i) => (
+                  <Cell key={i}
+                    fill={BLUES[i % BLUES.length]}
+                    opacity={selectedForma !== null ? (e.name === selectedForma ? 1 : 0.35) : 1}
+                    stroke={e.name === selectedForma ? '#1e40af' : 'none'}
+                    strokeWidth={e.name === selectedForma ? 2 : 0}
+                  />
+                ))}
+              </Pie>
+              <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }}
+                formatter={(v: any, name: any) => [v, name]} />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
       </div>
+
+      {/* ── Drill-down por Forma ──────────────────────────────────────────────── */}
+      {selectedForma !== null && (
+        <div className="px-4 pb-4">
+          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', borderBottom: '1px solid #f1f5f9' }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}>Forma: {selectedForma}</span>
+              <span style={{ fontSize: 11, color: '#9aa1b3' }}>
+                {tabla.filter((r: any) => (r.Forma || 'Sin forma') === selectedForma).length} SOLPEs
+              </span>
+              <button onClick={() => setSelectedForma(null)}
+                style={{ marginLeft: 'auto', fontSize: 10, padding: '2px 8px', borderRadius: 4, border: '1px solid #fca5a5', background: '#fee2e2', color: '#dc2626', cursor: 'pointer' }}>
+                ✕ Cerrar
+              </button>
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid #e5e7eb', background: '#f9fafb' }}>
+                    {['Código', 'Nombre', 'Tipo', 'Estado', 'Días Gestión', 'Creación'].map(h => (
+                      <th key={h} style={{ padding: '6px 12px', textAlign: 'left', fontSize: 10, fontWeight: 700, color: '#6b7280', whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {tabla
+                    .filter((r: any) => (r.Forma || 'Sin forma') === selectedForma)
+                    .map((r: any, i: number) => (
+                      <tr key={i} style={{ borderTop: '1px solid #f0f0f0', background: i % 2 === 1 ? '#fafafa' : '#fff' }}>
+                        <td style={{ padding: '5px 12px', fontFamily: 'monospace', color: '#374151', whiteSpace: 'nowrap' }}>{r['Código']}</td>
+                        <td style={{ padding: '5px 12px', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#4b5563' }} title={r.Nombre}>{r.Nombre}</td>
+                        <td style={{ padding: '5px 12px', color: '#6b7280' }}>{r.Tipo || '—'}</td>
+                        <td style={{ padding: '5px 12px' }}>
+                          <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${BADGE[r.Grupo_Estado] ?? 'bg-gray-100 text-gray-500'}`}>
+                            {r.Estado_SOLPE || r.Grupo_Estado}
+                          </span>
+                        </td>
+                        <td style={{ padding: '5px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#6b7280' }}>{r.Dias_Gestion ?? '—'}</td>
+                        <td style={{ padding: '5px 12px', color: '#6b7280', whiteSpace: 'nowrap' }}>{r.Fecha_Creacion_SOLPE?.split('T')[0] ?? '—'}</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Benchmarks por categoría ────────────────────────────────────────── */}
       <div className="px-4 pb-4">
@@ -658,7 +760,6 @@ export default function Solpes() {
                       <SortTh label="Contrato"  field="Contrato"             sort={alertaSort} onSort={handleAlertaSort} style={{ padding: '7px 12px' }} />
                       <SortTh label="Tipo"      field="Tipo"                 sort={alertaSort} onSort={handleAlertaSort} style={{ padding: '7px 12px' }} />
                       <SortTh label="Forma"     field="Forma"                sort={alertaSort} onSort={handleAlertaSort} style={{ padding: '7px 12px' }} />
-                      <SortTh label="Monto"     field="Monto"                sort={alertaSort} onSort={handleAlertaSort} align="right" style={{ padding: '7px 12px' }} />
                       <SortTh label="Estado"    field="Estado_SOLPE"         sort={alertaSort} onSort={handleAlertaSort} align="center" style={{ padding: '7px 12px' }} />
                       <SortTh label="Creación"  field="Fecha_Creacion_SOLPE" sort={alertaSort} onSort={handleAlertaSort} style={{ padding: '7px 12px' }} />
                       <SortTh label="Días"      field="dias_elapsed"         sort={alertaSort} onSort={handleAlertaSort} align="right" style={{ padding: '7px 12px' }} />
@@ -677,9 +778,6 @@ export default function Solpes() {
                           <td style={{ padding: '5px 12px', fontFamily: 'monospace', color: '#2563eb', whiteSpace: 'nowrap' }}>{a.Contrato || '—'}</td>
                           <td style={{ padding: '5px 12px', color: '#374151' }}>{a.Tipo}</td>
                           <td style={{ padding: '5px 12px', color: '#6b7280' }}>{a.Forma}</td>
-                          <td style={{ padding: '5px 12px', textAlign: 'right', color: '#6b7280', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
-                            {a.Monto ? `${a.Monto.toLocaleString('es-CL')} ${a.Moneda || ''}` : '—'}
-                          </td>
                           <td style={{ padding: '5px 12px', textAlign: 'center' }}>
                             <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${BADGE[a.Grupo_Estado] ?? 'bg-gray-100 text-gray-500'}`}
                               title={a.Estado_SOLPE}>{a.Estado_SOLPE || a.Grupo_Estado}</span>
@@ -706,7 +804,7 @@ export default function Solpes() {
                       )
                     })}
                     {sortedAlertas.length === 0 && (
-                      <tr><td colSpan={12} style={{ padding: 16, textAlign: 'center', color: '#9aa1b3', fontSize: 12 }}>
+                      <tr><td colSpan={11} style={{ padding: 16, textAlign: 'center', color: '#9aa1b3', fontSize: 12 }}>
                         {alertas.length === 0
                           ? 'No hay SOLPEs abiertas que superen el 50% de su benchmark de categoría'
                           : 'Sin resultados con los filtros seleccionados'}
@@ -793,8 +891,6 @@ export default function Solpes() {
                       <SortTh label="Nombre"      field="Nombre"                       sort={solpeSort} onSort={handleSort} style={{ padding: '7px 12px' }} />
                       <SortTh label="Tipo"        field="Tipo"                         sort={solpeSort} onSort={handleSort} style={{ padding: '7px 12px' }} />
                       <SortTh label="Forma"       field="Forma"                        sort={solpeSort} onSort={handleSort} style={{ padding: '7px 12px' }} />
-                      <SortTh label="Monto"       field="Monto"                        sort={solpeSort} onSort={handleSort} align="right" style={{ padding: '7px 12px' }} />
-                      <SortTh label="Moneda"      field="Moneda"                       sort={solpeSort} onSort={handleSort} style={{ padding: '7px 12px' }} />
                       <SortTh label="Contrato"    field="Contrato"                     sort={solpeSort} onSort={handleSort} style={{ padding: '7px 12px' }} />
                       <SortTh label="Solicitante" field="Usuario Solicitante"          sort={solpeSort} onSort={handleSort} style={{ padding: '7px 12px' }} />
                       <SortTh label="Gestor"      field="Ges. de Contratos y Compras"  sort={solpeSort} onSort={handleSort} style={{ padding: '7px 12px' }} />
@@ -810,8 +906,6 @@ export default function Solpes() {
                         <td style={{ padding: '5px 12px', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#4b5563' }} title={r.Nombre}>{r.Nombre}</td>
                         <td style={{ padding: '5px 12px', color: '#6b7280' }}>{r.Tipo}</td>
                         <td style={{ padding: '5px 12px', color: '#6b7280' }}>{r.Forma}</td>
-                        <td style={{ padding: '5px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{r.Monto ? r.Monto.toLocaleString('es-CL') : '—'}</td>
-                        <td style={{ padding: '5px 12px', color: '#6b7280' }}>{r.Moneda || '—'}</td>
                         <td style={{ padding: '5px 12px', fontFamily: 'monospace', color: '#2563eb' }}>{r.Contrato || '—'}</td>
                         <td style={{ padding: '5px 12px', maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#6b7280' }} title={r['Usuario Solicitante']}>{r['Usuario Solicitante'] || '—'}</td>
                         <td style={{ padding: '5px 12px', maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#6b7280' }} title={r['Ges. de Contratos y Compras']}>{r['Ges. de Contratos y Compras'] || '—'}</td>
@@ -824,7 +918,7 @@ export default function Solpes() {
                       </tr>
                     ))}
                     {sortedSolpes.length === 0 && (
-                      <tr><td colSpan={12} style={{ padding: '20px', textAlign: 'center', color: '#9aa1b3', fontSize: 12 }}>Sin SOLPEs con los filtros seleccionados</td></tr>
+                      <tr><td colSpan={10} style={{ padding: '20px', textAlign: 'center', color: '#9aa1b3', fontSize: 12 }}>Sin SOLPEs con los filtros seleccionados</td></tr>
                     )}
                   </tbody>
                 </table>

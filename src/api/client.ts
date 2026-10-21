@@ -85,7 +85,9 @@ export const getFuentesExternas   = () => api.get('/upload/fuentes-externas').th
 
 export const getHomeCampanaProyectos = (campana: string) => api.get('/home/campana-proyectos', { params: { campana } }).then(r => r.data)
 
-export const getSolpeTiempos    = ()           => api.get('/licitaciones/tiempos').then(r => r.data)
+export const getSolpeTiempos          = ()      => api.get('/licitaciones/tiempos').then(r => r.data)
+export const getLicitAdjudicacionKpis   = (p?: object) => api.get('/licitaciones/adjudicacion-kpis',    { params: p }).then(r => r.data)
+export const getLicitGestionProveedores = (p?: object) => api.get('/licitaciones/gestion-proveedores', { params: p }).then(r => r.data)
 
 export const getMondayKpis      = ()           => api.get('/monday/kpis').then(r => r.data)
 export const getMondayTabla     = (p: object)  => api.get('/monday/tabla', { params: p }).then(r => r.data)
