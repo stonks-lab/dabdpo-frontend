@@ -61,8 +61,9 @@ export const getIncidencias               = () => api.get('/estado-proyectos/inc
 export const getEstadoProyectosResumen    = (p?: object) => api.get('/estado-proyectos/resumen',        { params: p }).then(r => r.data)
 export const getEstadoProyectosTimeline   = (p?: object) => api.get('/estado-proyectos/saldo-timeline', { params: p }).then(r => r.data)
 
-export const getMetrosPai    = () => api.get('/metros/pai').then(r => r.data)
-export const getMetrosAvance = () => api.get('/metros/avance').then(r => r.data)
+export const getMetrosPai               = () => api.get('/metros/pai').then(r => r.data)
+export const getMetrosAvance            = () => api.get('/metros/avance').then(r => r.data)
+export const getPresupuestoPerforacion  = () => api.get('/metros/presupuesto-perforacion').then(r => r.data)
 
 export const getDpoCostoMetro       = ()              => api.get('/dpo/costo-metro').then(r => r.data)
 export const getDpoCostoMetroUltimo = (p?: object)    => api.get('/dpo/costo-metro', { params: p }).then(r => r.data.ultimo)
@@ -86,8 +87,10 @@ export const getFuentesExternas   = () => api.get('/upload/fuentes-externas').th
 export const getHomeCampanaProyectos = (campana: string) => api.get('/home/campana-proyectos', { params: { campana } }).then(r => r.data)
 
 export const getSolpeTiempos          = ()      => api.get('/licitaciones/tiempos').then(r => r.data)
-export const getLicitAdjudicacionKpis   = (p?: object) => api.get('/licitaciones/adjudicacion-kpis',    { params: p }).then(r => r.data)
-export const getLicitGestionProveedores = (p?: object) => api.get('/licitaciones/gestion-proveedores', { params: p }).then(r => r.data)
+export const getLicitAdjudicacionKpis    = (p?: object) => api.get('/licitaciones/adjudicacion-kpis',    { params: p }).then(r => r.data)
+export const getLicitGestionProveedores  = (p?: object) => api.get('/licitaciones/gestion-proveedores', { params: p }).then(r => r.data)
+export const getLicitAdjudicacionDetalle = (p?: object) => api.get('/licitaciones/adjudicacion-detalle', { params: p }).then(r => r.data)
+export const getLicitGestionDetalle      = (p?: object) => api.get('/licitaciones/gestion-proveedores-detalle', { params: p }).then(r => r.data)
 
 export const getMondayKpis      = ()           => api.get('/monday/kpis').then(r => r.data)
 export const getMondayTabla     = (p: object)  => api.get('/monday/tabla', { params: p }).then(r => r.data)

@@ -12,6 +12,7 @@ import SourcingPlan from './pages/SourcingPlan'
 import CargaDatos from './pages/CargaDatos'
 import EstadoProyectos from './pages/EstadoProyectos'
 import MetrosPerforados from './pages/MetrosPerforados'
+import PresupuestoPerforacion from './pages/PresupuestoPerforacion'
 import Modificaciones from './pages/Modificaciones'
 import DashboardDPO from './pages/DashboardDPO'
 import SolpeTiempos from './pages/SolpeTiempos'
@@ -35,7 +36,8 @@ export default function App() {
           <Route path="simulacion"    element={<Simulacion />} />
           <Route path="carga"            element={<CargaDatos />} />
           <Route path="estado-proyectos"  element={<EstadoProyectos />} />
-          <Route path="metros"            element={<MetrosPerforados />} />
+          <Route path="metros"               element={<MetrosPerforados />} />
+          <Route path="presupuesto-perforacion" element={<PresupuestoPerforacion />} />
           <Route path="modificaciones"    element={<Modificaciones />} />
           <Route path="dashboard-dpo"     element={<DashboardDPO />} />
           <Route path="dashboard-dab"    element={<SolpeTiempos />} />

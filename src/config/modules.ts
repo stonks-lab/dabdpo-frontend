@@ -18,7 +18,7 @@ export const MODULOS: ModuloDef[] = [
   {
     id: 'operatividad',
     label: 'Operatividad',
-    rutas: ['/estado-proyectos', '/metros', '/alertas'],
+    rutas: ['/estado-proyectos', '/metros', '/presupuesto-perforacion', '/alertas'],
   },
   {
     id: 'dab',
