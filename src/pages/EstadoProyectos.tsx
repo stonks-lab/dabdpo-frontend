@@ -90,7 +90,7 @@ function ImpCell({ value }: { value: string }) {
 
 function Matrix({ data }: { data: any[] }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
-  const toggle = (k: string) => setExpanded(p => ({ ...p, [k]: !(p[k] ?? true) }))
+  const toggle = (k: string) => setExpanded(p => ({ ...p, [k]: !(p[k] ?? false) }))
 
   const proyectos = useMemo(() =>
     [...new Set(data.map(r => r.proyecto).filter(Boolean))].sort(), [data])
@@ -131,7 +131,7 @@ function Matrix({ data }: { data: any[] }) {
         <tbody>
           {Object.keys(tree).sort().map(alc => {
             const alcKey  = alc
-            const alcOpen = expanded[alcKey] !== false
+            const alcOpen = expanded[alcKey] === true
             const allCons = Object.keys(tree[alc]).sort()
             const alcByProy: Record<string, any[]> = {}
             proyectos.forEach(p => {
@@ -149,7 +149,7 @@ function Matrix({ data }: { data: any[] }) {
               // Contratos
               ...(!alcOpen ? [] : allCons.map(con => {
                 const conKey  = `${alcKey}|||${con}`
-                const conOpen = expanded[conKey] !== false
+                const conOpen = expanded[conKey] === true
                 const allProvs = Object.keys(tree[alc][con]).sort()
                 const conByProy: Record<string, any[]> = {}
                 proyectos.forEach(p => { conByProy[p] = allProvs.flatMap(prov => tree[alc][con][prov][p] || []) })
@@ -194,9 +194,22 @@ type Inc = {
 const PAGE_SIZE = 20
 
 export default function EstadoProyectos() {
-  const [raw,  setRaw]  = useState<Inc[]>([])
-  const [loading, setLoading] = useState(true)
-  const [page, setPage] = useState(1)
+  const [raw,      setRaw]      = useState<Inc[]>([])
+  const [loading,  setLoading]  = useState(true)
+  const [page,     setPage]     = useState(1)
+  const [tableOpen, setTableOpen] = useState(false)
+  const [sortKey,  setSortKey]  = useState<keyof Inc | null>(null)
+  const [sortDir,  setSortDir]  = useState<'asc' | 'desc'>('asc')
+  // Filtros inline de tabla
+  const [tFechaDesde, setTFechaDesde] = useState('')
+  const [tFechaHasta, setTFechaHasta] = useState('')
+  const [tTipo,     setTTipo]     = useState('')
+  const [tDesc,     setTDesc]     = useState('')
+  const [tContrato, setTContrato] = useState('')
+  const [tProy,     setTProy]     = useState('')
+  const [tEco,      setTEco]      = useState('')
+  const [tImpacto,  setTImpacto]  = useState('')
+  const [tEstado,   setTEstado]   = useState('')
 
   // Filtros
   const [fProyecto,  setFProyecto]  = useState('')
@@ -287,13 +300,63 @@ export default function EstadoProyectos() {
   const pieProy = useMemo(() => pieByKey('proyecto'), [data])
   const pieCont = useMemo(() => pieByKey('contrato'), [data])
 
-  // Table
-  const tableData = data.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
-  const totalPages = Math.ceil(data.length / PAGE_SIZE)
+  // Table — sorted
+  const sortedData = useMemo(() => {
+    if (!sortKey) return data
+    return [...data].sort((a, b) => {
+      const av = a[sortKey], bv = b[sortKey]
+      if (av == null && bv == null) return 0
+      if (av == null) return 1
+      if (bv == null) return -1
+      if (sortKey === 'impacto') {
+        const diff = impScore(String(av)) - impScore(String(bv))
+        return sortDir === 'asc' ? diff : -diff
+      }
+      if (typeof av === 'number' && typeof bv === 'number')
+        return sortDir === 'asc' ? av - bv : bv - av
+      const cmp = String(av).localeCompare(String(bv), 'es')
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+  }, [data, sortKey, sortDir])
+
+  const tableFiltered = useMemo(() => {
+    return sortedData.filter(r => {
+      if (tFechaDesde || tFechaHasta) {
+        const d = r.fecha ? new Date(r.fecha) : null
+        if (!d || isNaN(d.getTime())) return false
+        if (tFechaDesde && d < new Date(tFechaDesde)) return false
+        if (tFechaHasta && d > new Date(tFechaHasta + 'T23:59:59')) return false
+      }
+      if (tTipo     && r.tipo     !== tTipo)     return false
+      if (tDesc     && !(r.descripcion || '').toLowerCase().includes(tDesc.toLowerCase())) return false
+      if (tContrato && r.contrato !== tContrato) return false
+      if (tProy     && r.proyecto !== tProy)     return false
+      if (tEco) { const min = parseFloat(tEco); if (!isNaN(min) && (r.impacto_economico || 0) < min) return false }
+      if (tImpacto  && r.impacto  !== tImpacto)  return false
+      if (tEstado   && (r.estado || '').toLowerCase() !== tEstado) return false
+      return true
+    })
+  }, [sortedData, tFechaDesde, tFechaHasta, tTipo, tDesc, tContrato, tProy, tEco, tImpacto, tEstado])
+
+  const tableData  = tableFiltered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const totalPages = Math.ceil(tableFiltered.length / PAGE_SIZE)
+
+  const activeTableFilters = [tFechaDesde, tFechaHasta, tTipo, tDesc, tContrato, tProy, tEco, tImpacto, tEstado].filter(Boolean).length
+  const clearTableFilters = () => {
+    setTFechaDesde(''); setTFechaHasta(''); setTTipo(''); setTDesc(''); setTContrato('')
+    setTProy(''); setTEco(''); setTImpacto(''); setTEstado(''); setPage(1)
+  }
 
   const resetFiltros = () => {
     setFProyecto(''); setFContrato(''); setFAlcance(''); setFImpacto('')
-    setFTipo(''); setFAdmin(''); setFDesde(''); setFHasta(''); setPage(1)
+    setFTipo(''); setFAdmin(''); setFDesde(''); setFHasta('')
+    clearTableFilters()
+  }
+
+  const handleSort = (key: keyof Inc) => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortKey(key); setSortDir('asc') }
+    setPage(1)
   }
 
   if (loading) return <div className="p-6 text-gray-400 text-sm">Cargando...</div>
@@ -457,22 +520,116 @@ export default function EstadoProyectos() {
 
       {/* Tabla detalle */}
       <div className="mx-4 mb-6 bg-white rounded-xl shadow-sm overflow-hidden">
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100">
+        <div
+          className="flex items-center gap-2 px-4 py-3 border-b border-slate-100 cursor-pointer select-none hover:bg-slate-50 transition-colors"
+          onClick={() => setTableOpen(o => !o)}
+        >
           <span className="text-sm font-semibold text-gray-700">Detalle de Incidencias</span>
-          <span className="text-xs text-slate-400 ml-auto">{data.length} registros</span>
+          <span className="text-xs text-slate-400 ml-auto flex items-center gap-2">
+            {activeTableFilters > 0
+              ? <>{tableFiltered.length} de {data.length} registros
+                  <button onClick={e => { e.stopPropagation(); clearTableFilters() }}
+                    className="text-[10px] text-red-400 hover:text-red-600 border border-red-200 hover:border-red-400 rounded px-1.5 py-0.5 transition-colors">
+                    ✕ filtros tabla
+                  </button>
+                </>
+              : <>{data.length} registros</>
+            }
+          </span>
+          <span className="text-slate-400 text-xs ml-2">{tableOpen ? '▲' : '▼'}</span>
         </div>
-        <div className="overflow-x-auto">
+        {tableOpen && <><div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead className="bg-slate-50 text-gray-500 uppercase text-[10px] tracking-wide">
               <tr>
-                <th className="px-3 py-2.5 text-left">Fecha</th>
-                <th className="px-3 py-2.5 text-left">Tipo</th>
-                <th className="px-3 py-2.5 text-left">Descripción</th>
-                <th className="px-3 py-2.5 text-left">Contrato</th>
-                <th className="px-3 py-2.5 text-left">Proyecto</th>
-                <th className="px-3 py-2.5 text-right">Imp. Económico</th>
-                <th className="px-3 py-2.5 text-center">Impacto</th>
-                <th className="px-3 py-2.5 text-center">Estado</th>
+                {([
+                  ['fecha',             'Fecha',          'text-left'  ],
+                  ['tipo',              'Tipo',           'text-left'  ],
+                  ['descripcion',       'Descripción',    'text-left'  ],
+                  ['contrato',          'Contrato',       'text-left'  ],
+                  ['proyecto',          'Proyecto',       'text-left'  ],
+                  ['impacto_economico', 'Imp. Económico', 'text-right' ],
+                  ['impacto',           'Impacto',        'text-center'],
+                  ['estado',            'Estado',         'text-center'],
+                ] as [keyof Inc, string, string][]).map(([key, label, align]) => (
+                  <th key={key}
+                    className={`px-3 py-2.5 ${align} cursor-pointer hover:bg-slate-100 transition-colors whitespace-nowrap`}
+                    onClick={() => handleSort(key)}
+                  >
+                    {label}
+                    <span className="ml-1 inline-block w-3 text-center">
+                      {sortKey === key
+                        ? <span className="text-blue-500">{sortDir === 'asc' ? '↑' : '↓'}</span>
+                        : <span className="text-slate-300">↕</span>}
+                    </span>
+                  </th>
+                ))}
+              </tr>
+              <tr className="bg-white border-t border-slate-200">
+                {/* Fecha */}
+                <th className="px-2 py-1.5 font-normal">
+                  <div className="flex flex-col gap-0.5">
+                    <input type="date" value={tFechaDesde}
+                      onChange={e => { setTFechaDesde(e.target.value); setPage(1) }}
+                      className="w-full text-[11px] border border-slate-200 rounded px-1.5 py-0.5 focus:outline-none focus:border-blue-300 font-normal" />
+                    <input type="date" value={tFechaHasta}
+                      onChange={e => { setTFechaHasta(e.target.value); setPage(1) }}
+                      className="w-full text-[11px] border border-slate-200 rounded px-1.5 py-0.5 focus:outline-none focus:border-blue-300 font-normal" />
+                  </div>
+                </th>
+                {/* Tipo */}
+                <th className="px-2 py-1.5 font-normal">
+                  <select value={tTipo} onChange={e => { setTTipo(e.target.value); setPage(1) }}
+                    className="w-full text-[11px] border border-slate-200 rounded px-1 py-0.5 bg-white focus:outline-none focus:border-blue-300 font-normal">
+                    <option value="">Todos</option>
+                    {[...new Set(data.map(r => r.tipo).filter(Boolean))].sort().map(v => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                </th>
+                {/* Descripción */}
+                <th className="px-2 py-1.5 font-normal">
+                  <input type="text" placeholder="Buscar…" value={tDesc}
+                    onChange={e => { setTDesc(e.target.value); setPage(1) }}
+                    className="w-full text-[11px] border border-slate-200 rounded px-1.5 py-0.5 focus:outline-none focus:border-blue-300 font-normal" />
+                </th>
+                {/* Contrato */}
+                <th className="px-2 py-1.5 font-normal">
+                  <select value={tContrato} onChange={e => { setTContrato(e.target.value); setPage(1) }}
+                    className="w-full text-[11px] border border-slate-200 rounded px-1 py-0.5 bg-white focus:outline-none focus:border-blue-300 font-normal">
+                    <option value="">Todos</option>
+                    {[...new Set(data.map(r => r.contrato).filter(Boolean))].sort().map(v => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                </th>
+                {/* Proyecto */}
+                <th className="px-2 py-1.5 font-normal">
+                  <select value={tProy} onChange={e => { setTProy(e.target.value); setPage(1) }}
+                    className="w-full text-[11px] border border-slate-200 rounded px-1 py-0.5 bg-white focus:outline-none focus:border-blue-300 font-normal">
+                    <option value="">Todos</option>
+                    {[...new Set(data.map(r => r.proyecto).filter(Boolean))].sort().map(v => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                </th>
+                {/* Imp. Económico */}
+                <th className="px-2 py-1.5 font-normal">
+                  <input type="number" placeholder="Desde" value={tEco}
+                    onChange={e => { setTEco(e.target.value); setPage(1) }}
+                    className="w-full text-[11px] border border-slate-200 rounded px-1.5 py-0.5 text-right focus:outline-none focus:border-blue-300 font-normal" />
+                </th>
+                {/* Impacto */}
+                <th className="px-2 py-1.5 font-normal">
+                  <select value={tImpacto} onChange={e => { setTImpacto(e.target.value); setPage(1) }}
+                    className="w-full text-[11px] border border-slate-200 rounded px-1 py-0.5 bg-white focus:outline-none focus:border-blue-300 font-normal">
+                    <option value="">Todos</option>
+                    {[...new Set(data.map(r => r.impacto).filter(Boolean))].sort().map(v => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                </th>
+                {/* Estado — deduplicado case-insensitive */}
+                <th className="px-2 py-1.5 font-normal">
+                  <select value={tEstado} onChange={e => { setTEstado(e.target.value); setPage(1) }}
+                    className="w-full text-[11px] border border-slate-200 rounded px-1 py-0.5 bg-white focus:outline-none focus:border-blue-300 font-normal">
+                    <option value="">Todos</option>
+                    {[...new Set(data.map(r => r.estado).filter(Boolean).map(v => v.toLowerCase()))].sort()
+                      .map(v => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -513,6 +670,7 @@ export default function EstadoProyectos() {
               className="px-3 py-1 text-xs rounded-lg border border-slate-200 text-slate-500 disabled:opacity-30 hover:border-blue-300 hover:text-blue-600 transition-colors">›</button>
           </div>
         )}
+        </>}
       </div>
     </div>
   )

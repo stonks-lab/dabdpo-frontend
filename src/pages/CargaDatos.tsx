@@ -2,7 +2,7 @@ import { useCallback, useRef, useState, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import PageHeader from '../components/PageHeader'
 import {
-  uploadProyeccionesPyC, uploadProyeccionesAdC, uploadDimensiones, uploadIncidencias, uploadCostoMetro,
+  uploadProyeccionesPyC, uploadProyeccionesAdC, uploadDimensiones, uploadIncidencias, uploadCostoMetro, uploadProyectosInicio,
   getDpoConfig, saveDpoConfig, getDpoMesesCargados, deleteDpoCostoMetroMes,
   getRegistroCargas, getFuentesExternas,
 } from '../api/client'
@@ -25,6 +25,7 @@ const TABLA_MODULOS: Record<string, string> = {
   'dbo.Tabla_Proyectos':       'Análisis · Saldo · Proyecciones',
   'dbo.Tabla_Programas':       'Análisis · Saldo · Proyecciones',
   'dbo.ConfigDPO':             'Dashboard DPO',
+  'dbo.ProyectosInicio':       'Dashboard DPO',
 }
 
 // ── Campo responsable ──────────────────────────────────────────────────────────
@@ -87,6 +88,29 @@ function DropZone({ inputRef, accept, acceptLabel, loading, onFile, onDrop }: {
 // ── Resultado de carga ─────────────────────────────────────────────────────────
 function ResultOk({ detail }: { detail: any }) {
   if (!detail) return null
+  if (detail.tabla === 'ProyectosInicio') {
+    const cero = detail.filas_insertadas === 0
+    return (
+      <div className={`border rounded-xl p-4 space-y-1 ${cero ? 'bg-yellow-50 border-yellow-200' : 'bg-green-50 border-green-200'}`}>
+        <p className={`text-sm font-semibold ${cero ? 'text-yellow-800' : 'text-green-800'}`}>
+          {cero ? 'Archivo leído, sin filas cargadas' : 'Carga exitosa'}
+        </p>
+        <p className={`text-sm ${cero ? 'text-yellow-700' : 'text-green-700'}`}>
+          {detail.filas_insertadas?.toLocaleString('es-CL')} proyectos cargados
+          {detail.rows_raw > 0 && cero && ` (el archivo tenía ${detail.rows_raw} filas)`}
+        </p>
+        {cero && (
+          <p className="text-xs text-yellow-600">
+            Revisa que las columnas se llamen exactamente: <strong>Proyecto · Estado de inicio · Mes · Año</strong>, y que Mes y Año sean valores numéricos.
+          </p>
+        )}
+        {!cero && detail.periodos?.length > 0 && (
+          <p className="text-xs text-green-600">Períodos: {detail.periodos.join(', ')}</p>
+        )}
+        <p className={`text-xs ${cero ? 'text-yellow-500' : 'text-green-600'}`}>{detail.ultima_carga}</p>
+      </div>
+    )
+  }
   if (detail.tabla === 'registro_incidencias') {
     return (
       <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-1">
@@ -563,6 +587,12 @@ export default function CargaDatos() {
                     onUpload={file => uploadDimensiones(file, responsable)}
                   />
                   <CostoMetroCard onUpload={file => uploadCostoMetro(file, responsable)} />
+                  <UploadCard
+                    title="Proyectos iniciados según lo programado"
+                    subtitle='Excel con columnas: Proyecto, Estado de inicio, Mes, Año. Acumula por período — subir el mismo Mes/Año actualiza los registros existentes.'
+                    accept=".xlsx,.xls" acceptLabel="Solo archivos .xlsx / .xls" icon="🗓️"
+                    onUpload={file => uploadProyectosInicio(file, responsable)}
+                  />
                 </div>
               </>
             )}

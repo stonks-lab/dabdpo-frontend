@@ -61,9 +61,15 @@ export const getIncidencias               = () => api.get('/estado-proyectos/inc
 export const getEstadoProyectosResumen    = (p?: object) => api.get('/estado-proyectos/resumen',        { params: p }).then(r => r.data)
 export const getEstadoProyectosTimeline   = (p?: object) => api.get('/estado-proyectos/saldo-timeline', { params: p }).then(r => r.data)
 
-export const getMetrosPai               = () => api.get('/metros/pai').then(r => r.data)
+export const getMetrosPai               = (ano?: number, version?: string) => api.get('/metros/pai', { params: { ano, version } }).then(r => r.data)
+export const getMetrosPaiVersiones      = () => api.get('/metros/pai/versiones').then(r => r.data)
 export const getMetrosAvance            = () => api.get('/metros/avance').then(r => r.data)
 export const getPresupuestoPerforacion  = () => api.get('/metros/presupuesto-perforacion').then(r => r.data)
+
+export const getDpoProyectosInicio  = (fechaDesde?: string, fechaHasta?: string) =>
+  api.get('/dpo/proyectos-inicio', {
+    params: { fecha_desde: fechaDesde || undefined, fecha_hasta: fechaHasta || undefined },
+  }).then(r => r.data)
 
 export const getDpoCostoMetro       = ()              => api.get('/dpo/costo-metro').then(r => r.data)
 export const getDpoCostoMetroUltimo = (p?: object)    => api.get('/dpo/costo-metro', { params: p }).then(r => r.data.ultimo)
@@ -125,6 +131,15 @@ export const uploadIncidencias = (file: File, usuario = '') => {
   const form = new FormData()
   form.append('file', file)
   return api.post('/upload/incidencias', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    params: { usuario },
+  }).then(r => r.data)
+}
+
+export const uploadProyectosInicio = (file: File, usuario = '') => {
+  const form = new FormData()
+  form.append('file', file)
+  return api.post('/upload/proyectos-inicio', form, {
     headers: { 'Content-Type': 'multipart/form-data' },
     params: { usuario },
   }).then(r => r.data)

@@ -4,7 +4,7 @@ import {
   XAxis, YAxis, Tooltip,
   ResponsiveContainer, CartesianGrid, Legend, ReferenceLine,
 } from 'recharts'
-import { getDpoCostoMetro, deleteDpoCostoMetroMes } from '../api/client'
+import { getDpoCostoMetro, deleteDpoCostoMetroMes, getDpoProyectosInicio } from '../api/client'
 import PageHeader from '../components/PageHeader'
 
 const usd = (v: number) => `${v.toFixed(2)} US$/m`
@@ -26,6 +26,16 @@ interface RowCM {
 interface Config {
   meta_costo_metro: number | null
   meta_tolerancia_brecha: number | null
+}
+interface ProyectosInicioResumen {
+  total: number
+  cumplimiento: number
+  incumplimiento: number
+  postergado: number
+  otro: number
+  pct_cumplimiento: number
+  periodo: string | null
+  estados: Record<string, number>
 }
 
 function MetricCard({ label, value, valueColor, meta, metaLabel, sub }: {
@@ -55,6 +65,81 @@ function MetricCard({ label, value, valueColor, meta, metaLabel, sub }: {
   )
 }
 
+const META_INICIO = 0.9
+
+function ProyectosInicioPanel({ data }: { data: ProyectosInicioResumen }) {
+  const pct    = data.pct_cumplimiento
+  const cumPct = Math.round(pct * 100)
+  const metaPct = Math.round(META_INICIO * 100)
+  const badge  = pct >= META_INICIO ? 'ok' : pct >= META_INICIO * 0.7 ? 'warn' : 'danger'
+  const badgeLabel = pct >= META_INICIO ? 'Dentro de meta' : pct >= META_INICIO * 0.7 ? 'Cerca de la meta' : 'Bajo lo esperado'
+
+  const kpis = [
+    { label: 'Comenzados en cumplimiento',    count: data.cumplimiento,   sub: 'Inician en la fecha comprometida', color: 'var(--success-500)', bg: '#f0fdf4', border: '#c3e6b8' },
+    { label: 'Comenzados con incumplimiento', count: data.incumplimiento, sub: 'Desfase mayor a ±10 días',         color: 'var(--warning-500)', bg: '#fffbeb', border: '#fde68a' },
+    { label: 'Postergados',                   count: data.postergado,     sub: 'No iniciados a la fecha',          color: 'var(--error-500)',   bg: '#fff1f2', border: '#fecdd3' },
+  ]
+
+  return (
+    <section className="panel">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+        <h2 style={{ margin: 0 }}>Fecha Inicio Proyecto</h2>
+        <span className={`chip ${badge}`}>{badgeLabel}</span>
+        {data.periodo && (
+          <span style={{ fontSize: 11, color: 'var(--gray-400)', marginLeft: 'auto' }}>
+            {data.periodo}
+          </span>
+        )}
+      </div>
+      <p style={{ fontSize: 12, color: 'var(--gray-500)', marginBottom: 14 }}>
+        <strong>{data.total}</strong> proyecto{data.total !== 1 ? 's' : ''} debían iniciar a la fecha
+        &nbsp;·&nbsp;<strong>{cumPct}%</strong> en cumplimiento
+        &nbsp;·&nbsp;Meta {metaPct}%
+      </p>
+
+      {/* Barra de progreso */}
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--gray-400)', marginBottom: 3 }}>
+          <span>0 %</span>
+          <span>{metaPct} %</span>
+          <span>100 %</span>
+        </div>
+        <div style={{ position: 'relative', height: 10, background: 'var(--gray-100)', borderRadius: 6, overflow: 'visible' }}>
+          <div style={{
+            height: '100%', width: `${cumPct}%`, borderRadius: 6,
+            background: badge === 'ok' ? 'var(--success-500)' : badge === 'warn' ? 'var(--warning-500)' : 'var(--error-500)',
+            transition: 'width .4s ease',
+          }} />
+          <div style={{
+            position: 'absolute', top: -3, bottom: -3,
+            left: `${metaPct}%`, width: 2,
+            background: 'var(--navy-500)', transform: 'translateX(-50%)',
+          }} />
+        </div>
+      </div>
+
+      {/* KPI boxes */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {kpis.map(({ label, count, sub, color, bg, border }) => (
+          <div key={label} style={{ background: bg, border: `1px solid ${border}`, borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 14 }}>
+            <p style={{ fontSize: 32, fontWeight: 800, color, lineHeight: 1, minWidth: 36, textAlign: 'center' }}>{count}</p>
+            <div>
+              <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-700)', marginBottom: 2 }}>{label}</p>
+              <p style={{ fontSize: 11, color: 'var(--gray-400)' }}>{sub}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {data.otro > 0 && (
+        <p style={{ marginTop: 10, fontSize: 11, color: 'var(--warning-500)', fontWeight: 600 }}>
+          ⚠ {data.otro} proyecto{data.otro !== 1 ? 's' : ''} sin clasificar — revisa los valores de "Estado de inicio" en la carga.
+        </p>
+      )}
+    </section>
+  )
+}
+
 // Convierte "YYYY-MM" → número comparable: 202401
 function toYM(s: string): number {
   if (!s) return 0
@@ -69,6 +154,7 @@ export default function DashboardDPO() {
   const [error,         setError]         = useState('')
   const [confirmDelete, setConfirmDelete] = useState<{ anio: number; mes: number } | null>(null)
   const [deleting,      setDeleting]      = useState(false)
+  const [piData,        setPiData]        = useState<ProyectosInicioResumen | null>(null)
   const [fechaDesde,    setFechaDesde]    = useState('')
   const [fechaHasta,    setFechaHasta]    = useState('')
 
@@ -82,6 +168,11 @@ export default function DashboardDPO() {
   }, [])
 
   useEffect(() => { load() }, [load])
+  useEffect(() => {
+    getDpoProyectosInicio(fechaDesde || undefined, fechaHasta || undefined)
+      .then((d: ProyectosInicioResumen) => setPiData(d.total > 0 ? d : null))
+      .catch(() => {})
+  }, [fechaDesde, fechaHasta])
 
   const doDelete = async () => {
     if (!confirmDelete) return
@@ -192,190 +283,212 @@ export default function DashboardDPO() {
         )}
       </div>
 
-      {/* ── Contenido ────────────────────────────────────────────────────────── */}
-      {historico.length === 0 ? (
-        <div className="page">
-          <div className="panel" style={{ textAlign: 'center', padding: '48px 24px' }}>
-            <p style={{ fontSize: 32, marginBottom: 12 }}>📂</p>
-            <p style={{ fontWeight: 700, color: 'var(--gray-700)', marginBottom: 6 }}>Sin datos cargados</p>
-            <p style={{ fontSize: 12, color: 'var(--gray-400)' }}>
-              Ve a <strong>Carga de Datos → P&C → Costo Metro</strong> y sube el archivo del mes.
-            </p>
-          </div>
-        </div>
-      ) : historicoFiltrado.length === 0 ? (
-        <div className="page">
-          <div className="panel" style={{ textAlign: 'center', padding: '32px 24px' }}>
-            <p style={{ fontSize: 24, marginBottom: 8 }}>🔍</p>
-            <p style={{ fontWeight: 700, color: 'var(--gray-700)', marginBottom: 6 }}>Sin datos en el período seleccionado</p>
-            <p style={{ fontSize: 12, color: 'var(--gray-400)' }}>
-              Ajusta el rango de fechas o{' '}
-              <button
-                onClick={() => { setFechaDesde(''); setFechaHasta('') }}
-                style={{ background: 'none', border: 'none', color: 'var(--navy-500)', cursor: 'pointer', fontSize: 12, fontWeight: 600, padding: 0 }}
-              >
-                limpia el filtro
-              </button>{' '}
-              para ver todos los {historico.length} meses.
-            </p>
-          </div>
-        </div>
-      ) : (
-        <div className="page">
+      {/* ── Layout dos columnas ───────────────────────────────────────────────── */}
+      <div className="page">
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 340px', gap: 20, alignItems: 'start' }}>
 
-          {/* ── KPI cards ── */}
-          {ultimoFilt && (
-            <div style={{ display: 'flex', gap: 16 }}>
-              <MetricCard
-                label="Costo Metro Ajustado"
-                value={usd(ultimoFilt.costo_metro_ajustado)}
-                valueColor={realColor()}
-                sub={`Real/Proy: ${usd(ultimoFilt.costo_metro_real)} · ${ultimoFilt.mes_nombre} ${ultimoFilt.anio}`}
-                meta={config.meta_costo_metro != null ? `${config.meta_costo_metro.toFixed(2)} US$/m` : null}
-                metaLabel="Meta"
-              />
-              <MetricCard
-                label="Costo Metro Programado"
-                value={usd(ultimoFilt.costo_metro_programado)}
-                valueColor="var(--navy-400)"
-                sub={`${ultimoFilt.mes_nombre} ${ultimoFilt.anio}`}
-              />
-              <MetricCard
-                label="Brecha"
-                value={pct(ultimoFilt.brecha)}
-                valueColor={brechaColor()}
-                sub={ultimoFilt.brecha < 0 ? 'Por debajo del programa ✓' : 'Por encima del programa'}
-                meta={config.meta_tolerancia_brecha != null ? `±${pct(config.meta_tolerancia_brecha)}` : null}
-                metaLabel="Tolerancia"
-              />
-            </div>
-          )}
-
-          {/* ── Bar chart ── */}
-          <section className="panel">
-            <h2>Programado vs Ajustado por Mes (US$/m)</h2>
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={serieBars} margin={{ top: 8, right: 24, left: 8, bottom: 4 }} barGap={4}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--gray-100)" vertical={false} />
-                <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--gray-400)' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 10, fill: 'var(--gray-400)' }} axisLine={false} tickLine={false} tickFormatter={v => v.toFixed(0)} />
-                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid var(--gray-200)' }} formatter={(v) => [`${Number(v).toFixed(2)} US$/m`]} />
-                <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
-                {config.meta_costo_metro != null && (
-                  <ReferenceLine y={config.meta_costo_metro} stroke="var(--error-500)" strokeDasharray="5 3" strokeWidth={1.5}
-                    label={{ value: `Meta: ${config.meta_costo_metro.toFixed(0)}`, position: 'right', style: { fontSize: 10, fill: 'var(--error-500)' } }} />
+          {/* ── COLUMNA IZQUIERDA: Costo Metro ─────────────────────────────────── */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
+            {historico.length === 0 ? (
+              <div className="panel" style={{ textAlign: 'center', padding: '48px 24px' }}>
+                <p style={{ fontSize: 32, marginBottom: 12 }}>📂</p>
+                <p style={{ fontWeight: 700, color: 'var(--gray-700)', marginBottom: 6 }}>Sin datos de Costo Metro</p>
+                <p style={{ fontSize: 12, color: 'var(--gray-400)' }}>
+                  Ve a <strong>Carga de Datos → DPO → Costo Metro</strong> y sube el archivo del mes.
+                </p>
+              </div>
+            ) : historicoFiltrado.length === 0 ? (
+              <div className="panel" style={{ textAlign: 'center', padding: '32px 24px' }}>
+                <p style={{ fontSize: 24, marginBottom: 8 }}>🔍</p>
+                <p style={{ fontWeight: 700, color: 'var(--gray-700)', marginBottom: 6 }}>Sin datos en el período seleccionado</p>
+                <p style={{ fontSize: 12, color: 'var(--gray-400)' }}>
+                  Ajusta el rango de fechas o{' '}
+                  <button
+                    onClick={() => { setFechaDesde(''); setFechaHasta('') }}
+                    style={{ background: 'none', border: 'none', color: 'var(--navy-500)', cursor: 'pointer', fontSize: 12, fontWeight: 600, padding: 0 }}
+                  >
+                    limpia el filtro
+                  </button>{' '}
+                  para ver todos los {historico.length} meses.
+                </p>
+              </div>
+            ) : (
+              <>
+                {/* KPI cards */}
+                {ultimoFilt && (
+                  <div style={{ display: 'flex', gap: 12 }}>
+                    <MetricCard
+                      label="Costo Metro Ajustado"
+                      value={usd(ultimoFilt.costo_metro_ajustado)}
+                      valueColor={realColor()}
+                      sub={`Real/Proy: ${usd(ultimoFilt.costo_metro_real)} · ${ultimoFilt.mes_nombre} ${ultimoFilt.anio}`}
+                      meta={config.meta_costo_metro != null ? `${config.meta_costo_metro.toFixed(2)} US$/m` : null}
+                      metaLabel="Meta"
+                    />
+                    <MetricCard
+                      label="Costo Metro Programado"
+                      value={usd(ultimoFilt.costo_metro_programado)}
+                      valueColor="var(--navy-400)"
+                      sub={`${ultimoFilt.mes_nombre} ${ultimoFilt.anio}`}
+                    />
+                    <MetricCard
+                      label="Brecha"
+                      value={pct(ultimoFilt.brecha)}
+                      valueColor={brechaColor()}
+                      sub={ultimoFilt.brecha < 0 ? 'Por debajo del programa ✓' : 'Por encima del programa'}
+                      meta={config.meta_tolerancia_brecha != null ? `±${pct(config.meta_tolerancia_brecha)}` : null}
+                      metaLabel="Tolerancia"
+                    />
+                  </div>
                 )}
-                <Bar dataKey="programado" name="Programado" fill="var(--navy-300)" radius={[3,3,0,0]} maxBarSize={40} />
-                <Bar dataKey="ajustado"   name="Ajustado"   fill="var(--gold-500)"  radius={[3,3,0,0]} maxBarSize={40} />
-              </BarChart>
-            </ResponsiveContainer>
-          </section>
 
-          {/* ── Line chart ── */}
-          <section className="panel">
-            <h2>Evolución Costo Metro (US$/m)</h2>
-            <p className="subtitle">
-              <span style={{ color: 'var(--navy-400)', fontWeight: 700 }}>— Real/Proy</span>
-              {'  '}
-              <span style={{ color: 'var(--gold-500)', fontWeight: 700 }}>— Ajustado</span>
-              {config.meta_costo_metro != null && (
-                <>{'  '}<span style={{ color: 'var(--error-500)', fontWeight: 700 }}>- - Meta</span></>
-              )}
-            </p>
-            <ResponsiveContainer width="100%" height={280}>
-              <LineChart data={serieLine} margin={{ top: 12, right: 24, left: 8, bottom: 4 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--gray-100)" />
-                <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--gray-400)' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 10, fill: 'var(--gray-400)' }} axisLine={false} tickLine={false}
-                  tickFormatter={v => v.toFixed(0)}
-                  label={{ value: 'US$/m', angle: -90, position: 'insideLeft', offset: 14, style: { fontSize: 10, fill: 'var(--gray-400)' } }} />
-                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid var(--gray-200)' }} formatter={(v) => [`${Number(v).toFixed(2)} US$/m`]} />
-                <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
-                {config.meta_costo_metro != null && (
-                  <ReferenceLine y={config.meta_costo_metro} stroke="var(--error-500)" strokeDasharray="5 3" strokeWidth={1.5}
-                    label={{ value: `Meta: ${config.meta_costo_metro.toFixed(0)}`, position: 'right', style: { fontSize: 10, fill: 'var(--error-500)' } }} />
-                )}
-                <Line type="monotone" dataKey="real" name="Real/Proy" stroke="var(--navy-400)" strokeWidth={2.5}
-                  dot={{ r: 4, fill: 'var(--navy-400)', strokeWidth: 0 }} activeDot={{ r: 6 }} />
-                <Line type="monotone" dataKey="ajustado" name="Ajustado" stroke="var(--gold-500)" strokeWidth={2.5}
-                  dot={{ r: 4, fill: 'var(--gold-500)', strokeWidth: 0 }} activeDot={{ r: 6 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </section>
+                {/* Bar chart */}
+                <section className="panel">
+                  <h2>Programado vs Ajustado por Mes (US$/m)</h2>
+                  <ResponsiveContainer width="100%" height={260}>
+                    <BarChart data={serieBars} margin={{ top: 8, right: 24, left: 8, bottom: 4 }} barGap={4}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--gray-100)" vertical={false} />
+                      <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--gray-400)' }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fontSize: 10, fill: 'var(--gray-400)' }} axisLine={false} tickLine={false} tickFormatter={v => v.toFixed(0)} />
+                      <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid var(--gray-200)' }} formatter={(v) => [`${Number(v).toFixed(2)} US$/m`]} />
+                      <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
+                      {config.meta_costo_metro != null && (
+                        <ReferenceLine y={config.meta_costo_metro} stroke="var(--error-500)" strokeDasharray="5 3" strokeWidth={1.5}
+                          label={{ value: `Meta: ${config.meta_costo_metro.toFixed(0)}`, position: 'right', style: { fontSize: 10, fill: 'var(--error-500)' } }} />
+                      )}
+                      <Bar dataKey="programado" name="Programado" fill="var(--navy-300)" radius={[3,3,0,0]} maxBarSize={40} />
+                      <Bar dataKey="ajustado"   name="Ajustado"   fill="var(--gold-500)"  radius={[3,3,0,0]} maxBarSize={40} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </section>
 
-          {/* ── Tabla histórica ── */}
-          <section className="panel">
-            <h2>
-              Histórico Mensual
-              {hayFiltro && (
-                <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 400, color: 'var(--gray-400)' }}>
-                  {historicoFiltrado.length} de {historico.length} meses
-                </span>
-              )}
-            </h2>
-            <div className="scroll-x">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Mes</th>
-                    <th>Año</th>
-                    <th style={{ textAlign: 'right' }}>Programado</th>
-                    <th style={{ textAlign: 'right' }}>Real/Proy</th>
-                    <th style={{ textAlign: 'right' }}>Ajustado</th>
-                    <th style={{ textAlign: 'center' }}>Brecha</th>
-                    {config.meta_costo_metro != null && <th style={{ textAlign: 'center' }}>vs Meta</th>}
-                    <th>Carga</th>
-                    <th style={{ width: 40 }}></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[...historicoFiltrado].reverse().map(r => {
-                    const dentroMeta = config.meta_costo_metro != null && r.costo_metro_ajustado <= config.meta_costo_metro
-                    const bOk        = config.meta_tolerancia_brecha == null || Math.abs(r.brecha) <= config.meta_tolerancia_brecha
-                    return (
-                      <tr key={`${r.anio}-${r.mes}`}>
-                        <td style={{ fontWeight: 600, color: 'var(--navy-500)' }}>{r.mes_nombre}</td>
-                        <td>{r.anio}</td>
-                        <td style={{ textAlign: 'right', fontWeight: 600 }}>{usd(r.costo_metro_programado)}</td>
-                        <td style={{ textAlign: 'right', color: 'var(--navy-400)', fontWeight: 600 }}>{usd(r.costo_metro_real)}</td>
-                        <td style={{ textAlign: 'right', fontWeight: 700,
-                          color: r.costo_metro_ajustado > r.costo_metro_programado ? 'var(--error-500)' : 'var(--success-500)' }}>
-                          {usd(r.costo_metro_ajustado)}
-                        </td>
-                        <td style={{ textAlign: 'center' }}>
-                          <span className={`chip ${bOk ? 'ok' : Math.abs(r.brecha) <= (config.meta_tolerancia_brecha ?? 0.05) * 1.5 ? 'warn' : 'danger'}`}>
-                            {pct(r.brecha)}
-                          </span>
-                        </td>
-                        {config.meta_costo_metro != null && (
-                          <td style={{ textAlign: 'center' }}>
-                            <span className={`chip ${dentroMeta ? 'ok' : 'danger'}`}>
-                              {dentroMeta ? 'Dentro' : 'Sobre meta'}
-                            </span>
-                          </td>
-                        )}
-                        <td style={{ fontSize: 11, color: 'var(--gray-400)' }}>{r.fecha_carga?.slice(0, 10) ?? '—'}</td>
-                        <td style={{ textAlign: 'center' }}>
-                          <button
-                            onClick={() => setConfirmDelete({ anio: r.anio, mes: r.mes })}
-                            title={`Eliminar ${r.mes_nombre} ${r.anio}`}
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, opacity: .4, padding: '2px 4px', lineHeight: 1 }}
-                            onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
-                            onMouseLeave={e => (e.currentTarget.style.opacity = '.4')}
-                          >
-                            🗑
-                          </button>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </section>
+                {/* Line chart */}
+                <section className="panel">
+                  <h2>Evolución Costo Metro (US$/m)</h2>
+                  <p className="subtitle">
+                    <span style={{ color: 'var(--navy-400)', fontWeight: 700 }}>— Real/Proy</span>
+                    {'  '}
+                    <span style={{ color: 'var(--gold-500)', fontWeight: 700 }}>— Ajustado</span>
+                    {config.meta_costo_metro != null && (
+                      <>{'  '}<span style={{ color: 'var(--error-500)', fontWeight: 700 }}>- - Meta</span></>
+                    )}
+                  </p>
+                  <ResponsiveContainer width="100%" height={260}>
+                    <LineChart data={serieLine} margin={{ top: 12, right: 24, left: 8, bottom: 4 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--gray-100)" />
+                      <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--gray-400)' }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fontSize: 10, fill: 'var(--gray-400)' }} axisLine={false} tickLine={false}
+                        tickFormatter={v => v.toFixed(0)}
+                        label={{ value: 'US$/m', angle: -90, position: 'insideLeft', offset: 14, style: { fontSize: 10, fill: 'var(--gray-400)' } }} />
+                      <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid var(--gray-200)' }} formatter={(v) => [`${Number(v).toFixed(2)} US$/m`]} />
+                      <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
+                      {config.meta_costo_metro != null && (
+                        <ReferenceLine y={config.meta_costo_metro} stroke="var(--error-500)" strokeDasharray="5 3" strokeWidth={1.5}
+                          label={{ value: `Meta: ${config.meta_costo_metro.toFixed(0)}`, position: 'right', style: { fontSize: 10, fill: 'var(--error-500)' } }} />
+                      )}
+                      <Line type="monotone" dataKey="real" name="Real/Proy" stroke="var(--navy-400)" strokeWidth={2.5}
+                        dot={{ r: 4, fill: 'var(--navy-400)', strokeWidth: 0 }} activeDot={{ r: 6 }} />
+                      <Line type="monotone" dataKey="ajustado" name="Ajustado" stroke="var(--gold-500)" strokeWidth={2.5}
+                        dot={{ r: 4, fill: 'var(--gold-500)', strokeWidth: 0 }} activeDot={{ r: 6 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </section>
+
+                {/* Tabla histórica */}
+                <section className="panel">
+                  <h2>
+                    Histórico Mensual
+                    {hayFiltro && (
+                      <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 400, color: 'var(--gray-400)' }}>
+                        {historicoFiltrado.length} de {historico.length} meses
+                      </span>
+                    )}
+                  </h2>
+                  <div className="scroll-x">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Mes</th>
+                          <th>Año</th>
+                          <th style={{ textAlign: 'right' }}>Programado</th>
+                          <th style={{ textAlign: 'right' }}>Real/Proy</th>
+                          <th style={{ textAlign: 'right' }}>Ajustado</th>
+                          <th style={{ textAlign: 'center' }}>Brecha</th>
+                          {config.meta_costo_metro != null && <th style={{ textAlign: 'center' }}>vs Meta</th>}
+                          <th>Carga</th>
+                          <th style={{ width: 40 }}></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[...historicoFiltrado].reverse().map(r => {
+                          const dentroMeta = config.meta_costo_metro != null && r.costo_metro_ajustado <= config.meta_costo_metro
+                          const bOk        = config.meta_tolerancia_brecha == null || Math.abs(r.brecha) <= config.meta_tolerancia_brecha
+                          return (
+                            <tr key={`${r.anio}-${r.mes}`}>
+                              <td style={{ fontWeight: 600, color: 'var(--navy-500)' }}>{r.mes_nombre}</td>
+                              <td>{r.anio}</td>
+                              <td style={{ textAlign: 'right', fontWeight: 600 }}>{usd(r.costo_metro_programado)}</td>
+                              <td style={{ textAlign: 'right', color: 'var(--navy-400)', fontWeight: 600 }}>{usd(r.costo_metro_real)}</td>
+                              <td style={{ textAlign: 'right', fontWeight: 700,
+                                color: r.costo_metro_ajustado > r.costo_metro_programado ? 'var(--error-500)' : 'var(--success-500)' }}>
+                                {usd(r.costo_metro_ajustado)}
+                              </td>
+                              <td style={{ textAlign: 'center' }}>
+                                <span className={`chip ${bOk ? 'ok' : Math.abs(r.brecha) <= (config.meta_tolerancia_brecha ?? 0.05) * 1.5 ? 'warn' : 'danger'}`}>
+                                  {pct(r.brecha)}
+                                </span>
+                              </td>
+                              {config.meta_costo_metro != null && (
+                                <td style={{ textAlign: 'center' }}>
+                                  <span className={`chip ${dentroMeta ? 'ok' : 'danger'}`}>
+                                    {dentroMeta ? 'Dentro' : 'Sobre meta'}
+                                  </span>
+                                </td>
+                              )}
+                              <td style={{ fontSize: 11, color: 'var(--gray-400)' }}>{r.fecha_carga?.slice(0, 10) ?? '—'}</td>
+                              <td style={{ textAlign: 'center' }}>
+                                <button
+                                  onClick={() => setConfirmDelete({ anio: r.anio, mes: r.mes })}
+                                  title={`Eliminar ${r.mes_nombre} ${r.anio}`}
+                                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, opacity: .4, padding: '2px 4px', lineHeight: 1 }}
+                                  onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+                                  onMouseLeave={e => (e.currentTarget.style.opacity = '.4')}
+                                >
+                                  🗑
+                                </button>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              </>
+            )}
+          </div>
+
+          {/* ── COLUMNA DERECHA: Fecha Inicio Proyecto ─────────────────────────── */}
+          <div>
+            {piData && piData.total > 0
+              ? <ProyectosInicioPanel data={piData} />
+              : (
+                <div className="panel" style={{ textAlign: 'center', padding: '32px 16px' }}>
+                  <p style={{ fontSize: 24, marginBottom: 8 }}>🗓️</p>
+                  <p style={{ fontWeight: 700, fontSize: 13, color: 'var(--gray-600)', marginBottom: 6 }}>
+                    Fecha Inicio Proyecto
+                  </p>
+                  <p style={{ fontSize: 11, color: 'var(--gray-400)', lineHeight: 1.5 }}>
+                    Sin datos cargados.<br />
+                    Ve a <strong>Carga de Datos → DPO</strong> y sube el archivo de proyectos iniciados.
+                  </p>
+                </div>
+              )
+            }
+          </div>
 
         </div>
-      )}
+      </div>
 
       {/* ── Modal confirmación eliminar ── */}
       {confirmDelete && (
