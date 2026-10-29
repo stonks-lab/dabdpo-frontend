@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { PieChart, Pie, Cell, Legend, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
-import { getMondayKpis, getMondayTabla, getMondayFiltros, getMondayTendencia } from '../api/client'
+import { getMondayKpis, getMondayTabla, getMondayFiltros, getMondayTendencia, getMondayTendenciaRazones } from '../api/client'
 import KpiCard from '../components/KpiCard'
 import PageHeader from '../components/PageHeader'
 
@@ -8,6 +8,35 @@ const clp = (v: number) =>
   new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(v)
 const mmclp = (v: number) =>
   v >= 1e9 ? `$${(v / 1e9).toFixed(1)} MM` : v >= 1e6 ? `$${(v / 1e6).toFixed(0)} M` : clp(v)
+
+function daysBetween(a: string, b: string): number | null {
+  if (!a || !b) return null
+  const da = new Date(a), db = new Date(b)
+  if (isNaN(da.getTime()) || isNaN(db.getTime())) return null
+  return Math.round((db.getTime() - da.getTime()) / 86_400_000)
+}
+
+function diasColor(d: number): string {
+  if (d <= 7)  return 'var(--success-500)'
+  if (d <= 14) return 'var(--warning-500)'
+  return 'var(--error-500)'
+}
+
+function DiasCell({ estado, dias }: { estado: string; dias: number | null }) {
+  return (
+    <div style={{ textAlign: 'center' }}>
+      {estado ? estadoChip(estado) : <span style={{ color: 'var(--gray-300)' }}>—</span>}
+      {dias !== null && (
+        <div style={{ fontSize: 10, fontWeight: 700, marginTop: 3, color: diasColor(dias) }}>
+          {dias} día{dias !== 1 ? 's' : ''}
+        </div>
+      )}
+      {dias === null && estado && !estado.toLowerCase().includes('aprobad') && !estado.toLowerCase().includes('rechaz') && (
+        <div style={{ fontSize: 10, color: 'var(--gray-300)', marginTop: 3 }}>en curso</div>
+      )}
+    </div>
+  )
+}
 
 function estadoChip(estado: string) {
   const e = estado.toLowerCase()
@@ -34,7 +63,10 @@ interface Filters { tipo: string; estado: string; proyecto: string; contrato: st
 export default function Modificaciones() {
   const [tab,       setTab]      = useState<Tab>('Resumen')
   const [kpis,      setKpis]     = useState<any>(null)
-  const [tendencia, setTendencia]= useState<any[]>([])
+  const [tendencia,      setTendencia]     = useState<any[]>([])
+  const [tendenciaRazones, setTendenciaRazones] = useState<{ razones: string[]; datos: any[]; variacion: any[]; mes_inicio: string | null; mes_fin: string | null }>({ razones: [], datos: [], variacion: [], mes_inicio: null, mes_fin: null })
+  const [trDesde, setTrDesde] = useState('')
+  const [trHasta, setTrHasta] = useState('')
   const [filtros,   setFiltros]  = useState<any>(null)
   const [tabla,     setTabla]    = useState<any[]>([])
   const [loading,   setLoading]  = useState(false)
@@ -44,13 +76,36 @@ export default function Modificaciones() {
   const [tipoTabla,    setTipoTabla]    = useState<any[]>([])
   const [tipoLoading,  setTipoLoading]  = useState(false)
 
+  const [selectedProyecto, setSelectedProyecto] = useState<string | null>(null)
+  const [proyectoTabla,    setProyectoTabla]    = useState<any[]>([])
+  const [proyectoLoading,  setProyectoLoading]  = useState(false)
+
+  const [selectedAprobador, setSelectedAprobador] = useState<{ aprobador: string; cat: string } | null>(null)
+  const [aprobadorTabla,    setAprobadorTabla]    = useState<any[]>([])
+  const [aprobadorLoading,  setAprobadorLoading]  = useState(false)
+
+  const [varSort, setVarSort] = useState<{ col: string; dir: 1 | -1 }>({ col: 'razon', dir: 1 })
+
   useEffect(() => {
     setLoading(true)
     Promise.all([getMondayKpis(), getMondayFiltros(), getMondayTendencia()])
       .then(([k, f, t]) => { setKpis(k); setFiltros(f); setTendencia(t) })
       .catch(err => setError(`Error al conectar con Monday.com: ${err?.response?.data?.detail ?? err.message}`))
       .finally(() => setLoading(false))
+
+    getMondayTendenciaRazones()
+      .then(tr => setTendenciaRazones(tr))
+      .catch(() => {})
   }, [])
+
+  const fetchTendenciaRazones = useCallback(() => {
+    const p: Record<string, string> = {}
+    if (trDesde) p.desde = trDesde
+    if (trHasta) p.hasta = trHasta
+    getMondayTendenciaRazones(p)
+      .then(tr => setTendenciaRazones(tr))
+      .catch(() => {})
+  }, [trDesde, trHasta])
 
   const fetchTabla = useCallback(() => {
     const params = Object.fromEntries(Object.entries(filters).filter(([, v]) => v))
@@ -69,6 +124,34 @@ export default function Modificaciones() {
     setTipoLoading(true)
     getMondayTabla({ tipo }).then(setTipoTabla).finally(() => setTipoLoading(false))
   }, [selectedTipo])
+
+  const handleProyectoClick = useCallback((data: any) => {
+    const proyecto = data?.proyecto ?? data?.activePayload?.[0]?.payload?.proyecto ?? ''
+    if (!proyecto) return
+    if (selectedProyecto === proyecto) { setSelectedProyecto(null); setProyectoTabla([]); return }
+    setSelectedProyecto(proyecto)
+    setProyectoLoading(true)
+    getMondayTabla({ proyecto }).then(setProyectoTabla).finally(() => setProyectoLoading(false))
+  }, [selectedProyecto])
+
+  const CAT_LABEL: Record<string, string> = { aprobados: 'Aprobados', por_aprobar: 'Por aprobar', rechazados: 'Rechazados' }
+  const CAT_API:   Record<string, string> = { aprobados: 'aprobado',  por_aprobar: 'por_aprobar',  rechazados: 'rechazado'  }
+  const APROBADOR_FIELD: Record<string, string> = {
+    'Supervisor de Abastecimiento': 'estado_supervisor',
+    'DPO':                          'estado_dpo',
+    'P&C':                          'estado_pyc',
+  }
+
+  const handleAprobadorClick = useCallback((cat: string) => (data: any) => {
+    const aprobador = data?.aprobador ?? data?.activePayload?.[0]?.payload?.aprobador ?? ''
+    if (!aprobador) return
+    if (selectedAprobador?.aprobador === aprobador && selectedAprobador?.cat === cat) {
+      setSelectedAprobador(null); setAprobadorTabla([]); return
+    }
+    setSelectedAprobador({ aprobador, cat })
+    setAprobadorLoading(true)
+    getMondayTabla({ aprobador, estado_cat: CAT_API[cat] ?? cat }).then(setAprobadorTabla).finally(() => setAprobadorLoading(false))
+  }, [selectedAprobador])
 
   return (
     <>
@@ -166,11 +249,13 @@ export default function Modificaciones() {
                   <section className="panel">
                     <h2>Por Proyecto</h2>
                     <ResponsiveContainer width="100%" height={220}>
-                      <BarChart data={kpis.por_proyecto} layout="vertical" margin={{ right: 16 }}>
+                      <BarChart data={kpis.por_proyecto} layout="vertical" margin={{ right: 16 }} style={{ cursor: 'pointer' }}>
                         <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--gray-400)' }} axisLine={false} tickLine={false} allowDecimals={false} />
                         <YAxis dataKey="proyecto" type="category" tick={{ fontSize: 11, fill: 'var(--gray-700)' }} width={160} axisLine={false} tickLine={false} />
                         <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid var(--gray-200)' }} />
-                        <Bar dataKey="cantidad" fill="var(--navy-300)" radius={[0, 5, 5, 0]} />
+                        <Bar dataKey="cantidad" fill="var(--navy-300)" radius={[0, 5, 5, 0]} onClick={handleProyectoClick}
+                          label={false}
+                        />
                       </BarChart>
                     </ResponsiveContainer>
                   </section>
@@ -226,6 +311,56 @@ export default function Modificaciones() {
                   </section>
                 )}
 
+                {selectedProyecto && (
+                  <section className="panel" style={{ marginTop: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                      <h2 style={{ margin: 0 }}>
+                        {selectedProyecto}
+                        <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 400, color: 'var(--gray-400)' }}>
+                          {proyectoLoading ? 'cargando…' : `${proyectoTabla.length} modificación${proyectoTabla.length !== 1 ? 'es' : ''}`}
+                        </span>
+                      </h2>
+                      <button className="btn-ghost" style={{ fontSize: 11, padding: '2px 10px' }} onClick={() => { setSelectedProyecto(null); setProyectoTabla([]) }}>✕ Cerrar</button>
+                    </div>
+                    {proyectoLoading ? (
+                      <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--gray-400)', fontSize: 13 }}>Cargando…</div>
+                    ) : (
+                      <div className="scroll-x">
+                        <table className="data-table">
+                          <thead>
+                            <tr>
+                              <th>Contrato</th>
+                              <th>Descripción</th>
+                              <th>Tipo</th>
+                              <th>Estado</th>
+                              <th>Est. DPO</th>
+                              <th>Impacto Monto</th>
+                              <th>F. Solicitud</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {proyectoTabla.length === 0 ? (
+                              <tr><td colSpan={7} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--gray-400)' }}>Sin registros</td></tr>
+                            ) : proyectoTabla.map((row: any) => (
+                              <tr key={row.id}>
+                                <td style={{ fontWeight: 600, color: 'var(--navy-500)', fontSize: 11 }}>{row.codigo_contrato || '—'}</td>
+                                <td style={{ fontSize: 10, color: 'var(--gray-500)', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.descripcion}>{row.descripcion || row.nombre || '—'}</td>
+                                <td style={{ fontSize: 11 }}>{row.tipo_modificacion || '—'}</td>
+                                <td>{estadoChip(row.estado)}</td>
+                                <td>{row.estado_dpo ? estadoChip(row.estado_dpo) : <span style={{ color: 'var(--gray-300)' }}>—</span>}</td>
+                                <td style={{ fontWeight: 700, color: row.impacto_monto_clp > 0 ? 'var(--navy-500)' : 'var(--gray-400)', fontSize: 12 }}>
+                                  {row.impacto_monto_clp > 0 ? mmclp(row.impacto_monto_clp) : '—'}
+                                </td>
+                                <td style={{ fontSize: 11, color: 'var(--gray-500)' }}>{row.fecha_solicitud || '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </section>
+                )}
+
                 <div className="two-col">
                   {/* Estado de aprobaciones por aprobador */}
                   <section className="panel">
@@ -244,9 +379,9 @@ export default function Modificaciones() {
                           contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid var(--gray-200)' }}
                           formatter={(v: any, name: string) => [v, name === 'aprobados' ? 'Aprobados' : name === 'por_aprobar' ? 'Por aprobar' : 'Rechazados']}
                         />
-                        <Bar dataKey="aprobados"  name="Aprobados"   stackId="a" fill="var(--success-500)" radius={[0,0,0,0]} />
-                        <Bar dataKey="por_aprobar" name="Por aprobar" stackId="a" fill="var(--warning-500)" radius={[0,0,0,0]} />
-                        <Bar dataKey="rechazados" name="Rechazados"  stackId="a" fill="var(--error-500)"   radius={[0,5,5,0]} />
+                        <Bar dataKey="aprobados"   name="Aprobados"   stackId="a" fill="var(--success-500)" radius={[0,0,0,0]} style={{ cursor: 'pointer' }} onClick={handleAprobadorClick('aprobados')} />
+                        <Bar dataKey="por_aprobar" name="Por aprobar" stackId="a" fill="var(--warning-500)" radius={[0,0,0,0]} style={{ cursor: 'pointer' }} onClick={handleAprobadorClick('por_aprobar')} />
+                        <Bar dataKey="rechazados"  name="Rechazados"  stackId="a" fill="var(--error-500)"   radius={[0,5,5,0]} style={{ cursor: 'pointer' }} onClick={handleAprobadorClick('rechazados')} />
                       </BarChart>
                     </ResponsiveContainer>
                     <div style={{ display: 'flex', gap: 16, marginTop: 6, justifyContent: 'center' }}>
@@ -282,6 +417,60 @@ export default function Modificaciones() {
                     ))}
                   </section>
                 </div>
+                {selectedAprobador && (
+                  <section className="panel" style={{ marginTop: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                      <h2 style={{ margin: 0 }}>
+                        {selectedAprobador.aprobador}
+                        <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 400, color: 'var(--gray-400)' }}>
+                          {selectedAprobador.cat === 'aprobados' ? 'Aprobados' : selectedAprobador.cat === 'por_aprobar' ? 'Por aprobar' : 'Rechazados'}
+                          {!aprobadorLoading && ` · ${aprobadorTabla.length} modificación${aprobadorTabla.length !== 1 ? 'es' : ''}`}
+                        </span>
+                      </h2>
+                      <button className="btn-ghost" style={{ fontSize: 11, padding: '2px 10px' }} onClick={() => { setSelectedAprobador(null); setAprobadorTabla([]) }}>✕ Cerrar</button>
+                    </div>
+                    {aprobadorLoading ? (
+                      <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--gray-400)', fontSize: 13 }}>Cargando…</div>
+                    ) : (
+                      <div className="scroll-x">
+                        <table className="data-table">
+                          <thead>
+                            <tr>
+                              <th>Contrato</th>
+                              <th>Proyecto</th>
+                              <th>Descripción</th>
+                              <th>Tipo</th>
+                              <th>Estado {selectedAprobador?.aprobador}</th>
+                              <th>Impacto Monto</th>
+                              <th>F. Solicitud</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {aprobadorTabla.length === 0 ? (
+                              <tr><td colSpan={7} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--gray-400)' }}>Sin registros</td></tr>
+                            ) : aprobadorTabla.map((row: any) => {
+                              const estadoField = selectedAprobador ? APROBADOR_FIELD[selectedAprobador.aprobador] : 'estado'
+                              const estadoVal   = row[estadoField] || row.estado || '—'
+                              return (
+                                <tr key={row.id}>
+                                  <td style={{ fontWeight: 600, color: 'var(--navy-500)', fontSize: 11 }}>{row.codigo_contrato || '—'}</td>
+                                  <td style={{ fontSize: 11 }}>{row.proyecto || '—'}</td>
+                                  <td style={{ fontSize: 10, color: 'var(--gray-500)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.descripcion}>{row.descripcion || row.nombre || '—'}</td>
+                                  <td style={{ fontSize: 11 }}>{row.tipo_modificacion || '—'}</td>
+                                  <td>{estadoChip(estadoVal)}</td>
+                                  <td style={{ fontWeight: 700, color: row.impacto_monto_clp > 0 ? 'var(--navy-500)' : 'var(--gray-400)', fontSize: 12 }}>
+                                    {row.impacto_monto_clp > 0 ? mmclp(row.impacto_monto_clp) : '—'}
+                                  </td>
+                                  <td style={{ fontSize: 11, color: 'var(--gray-500)' }}>{row.fecha_solicitud || '—'}</td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </section>
+                )}
               </>
             )}
 
@@ -342,7 +531,9 @@ export default function Modificaciones() {
                           <th>Proyecto</th>
                           <th>Tipo Modificación</th>
                           <th>Estado</th>
+                          <th>Est. Supervisor</th>
                           <th>Est. DPO</th>
+                          <th>Est. P&C</th>
                           <th>Impacto Monto</th>
                           <th>Impacto Plazo</th>
                           <th>Solicitante</th>
@@ -352,7 +543,7 @@ export default function Modificaciones() {
                       </thead>
                       <tbody>
                         {tabla.length === 0 ? (
-                          <tr><td colSpan={10} style={{ textAlign: 'center', padding: '40px 0', color: 'var(--gray-400)' }}>Sin registros</td></tr>
+                          <tr><td colSpan={13} style={{ textAlign: 'center', padding: '40px 0', color: 'var(--gray-400)' }}>Sin registros</td></tr>
                         ) : tabla.map((row: any) => (
                           <tr key={row.id}>
                             <td style={{ maxWidth: 200 }}>
@@ -362,7 +553,9 @@ export default function Modificaciones() {
                             <td style={{ fontSize: 11 }}>{row.proyecto || '—'}</td>
                             <td style={{ fontSize: 11 }}>{row.tipo_modificacion || '—'}</td>
                             <td>{estadoChip(row.estado)}</td>
+                            <td>{row.estado_supervisor ? estadoChip(row.estado_supervisor) : <span style={{ color: 'var(--gray-300)' }}>—</span>}</td>
                             <td>{row.estado_dpo ? estadoChip(row.estado_dpo) : <span style={{ color: 'var(--gray-300)' }}>—</span>}</td>
+                            <td>{row.estado_pyc ? estadoChip(row.estado_pyc) : <span style={{ color: 'var(--gray-300)' }}>—</span>}</td>
                             <td style={{ fontWeight: 700, color: row.impacto_monto_clp > 0 ? 'var(--navy-500)' : 'var(--gray-400)', fontSize: 12 }}>
                               {row.impacto_monto_clp > 0 ? mmclp(row.impacto_monto_clp) : '—'}
                             </td>
@@ -396,6 +589,9 @@ export default function Modificaciones() {
                         <th style={{ textAlign: 'center' }}>Supervisor</th>
                         <th style={{ textAlign: 'center' }}>DPO</th>
                         <th style={{ textAlign: 'center' }}>P&C</th>
+                        <th style={{ textAlign: 'center' }}>Días Sup.</th>
+                        <th style={{ textAlign: 'center' }}>Días DPO</th>
+                        <th style={{ textAlign: 'center' }}>Días P&C</th>
                         <th>F. Solicitud</th>
                         <th>F. Firma Sup.</th>
                         <th>F. Firma DPO</th>
@@ -405,22 +601,30 @@ export default function Modificaciones() {
                     </thead>
                     <tbody>
                       {tabla.length === 0 ? (
-                        <tr><td colSpan={11} style={{ textAlign: 'center', padding: '40px 0', color: 'var(--gray-400)' }}>Sin registros</td></tr>
-                      ) : tabla.map((row: any) => (
+                        <tr><td colSpan={14} style={{ textAlign: 'center', padding: '40px 0', color: 'var(--gray-400)' }}>Sin registros</td></tr>
+                      ) : tabla.map((row: any) => {
+                        const dSup = daysBetween(row.fecha_solicitud, row.fecha_firma_sup)
+                        const dDpo = daysBetween(row.fecha_firma_sup,  row.fecha_firma_dpo)
+                        const dPyc = daysBetween(row.fecha_firma_dpo,  row.fecha_firma_pyc)
+                        return (
                         <tr key={row.id}>
                           <td style={{ fontWeight: 600, color: 'var(--navy-500)', fontSize: 11 }}>{row.codigo_contrato || '—'}</td>
                           <td style={{ fontSize: 11 }}>{row.proyecto || '—'}</td>
                           <td style={{ fontSize: 10, color: 'var(--gray-500)', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.descripcion}>{row.descripcion || '—'}</td>
                           <td style={{ textAlign: 'center' }}>{row.estado_supervisor ? estadoChip(row.estado_supervisor) : <span style={{ color: 'var(--gray-300)' }}>—</span>}</td>
-                          <td style={{ textAlign: 'center' }}>{row.estado_dpo ? estadoChip(row.estado_dpo) : <span style={{ color: 'var(--gray-300)' }}>—</span>}</td>
-                          <td style={{ textAlign: 'center' }}>{row.estado_pyc ? estadoChip(row.estado_pyc) : <span style={{ color: 'var(--gray-300)' }}>—</span>}</td>
+                          <td style={{ textAlign: 'center' }}>{row.estado_dpo        ? estadoChip(row.estado_dpo)        : <span style={{ color: 'var(--gray-300)' }}>—</span>}</td>
+                          <td style={{ textAlign: 'center' }}>{row.estado_pyc        ? estadoChip(row.estado_pyc)        : <span style={{ color: 'var(--gray-300)' }}>—</span>}</td>
+                          <td style={{ textAlign: 'center', fontWeight: 700, fontSize: 12, color: dSup !== null ? diasColor(dSup) : 'var(--gray-300)' }}>{dSup !== null ? dSup : '—'}</td>
+                          <td style={{ textAlign: 'center', fontWeight: 700, fontSize: 12, color: dDpo !== null ? diasColor(dDpo) : 'var(--gray-300)' }}>{dDpo !== null ? dDpo : '—'}</td>
+                          <td style={{ textAlign: 'center', fontWeight: 700, fontSize: 12, color: dPyc !== null ? diasColor(dPyc) : 'var(--gray-300)' }}>{dPyc !== null ? dPyc : '—'}</td>
                           <td style={{ fontSize: 11, color: 'var(--gray-500)' }}>{row.fecha_solicitud || '—'}</td>
                           <td style={{ fontSize: 11, color: 'var(--gray-500)' }}>{row.fecha_firma_sup || '—'}</td>
                           <td style={{ fontSize: 11, color: 'var(--gray-500)' }}>{row.fecha_firma_dpo || '—'}</td>
                           <td style={{ fontSize: 11, color: 'var(--gray-500)' }}>{row.fecha_firma_pyc || '—'}</td>
                           <td style={{ fontSize: 11, fontWeight: 600, color: 'var(--navy-400)' }}>{row.saldo_vigente > 0 ? mmclp(row.saldo_vigente) : '—'}</td>
                         </tr>
-                      ))}
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -429,19 +633,130 @@ export default function Modificaciones() {
 
             {/* ── Tendencia ── */}
             {tab === 'Tendencia' && (
-              <section className="panel">
-                <h2>Solicitudes de Modificación por Mes</h2>
-                <p className="subtitle">Cantidad de solicitudes ingresadas al tablero Monday por período</p>
-                <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={tendencia} margin={{ top: 8, right: 16 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--gray-100)" />
-                    <XAxis dataKey="mes" tick={{ fontSize: 11, fill: 'var(--gray-400)' }} axisLine={false} tickLine={false} />
-                    <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--gray-400)' }} axisLine={false} tickLine={false} />
-                    <Tooltip formatter={(v) => [Number(v), 'Solicitudes']} contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid var(--gray-200)' }} />
-                    <Line type="monotone" dataKey="cantidad" stroke="var(--navy-400)" strokeWidth={2.5} dot={{ r: 4, fill: 'var(--navy-400)', strokeWidth: 0 }} activeDot={{ r: 6 }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </section>
+              <>
+                {/* Filtro de período */}
+                <div className="filters-bar" style={{ marginBottom: 12, borderRadius: 'var(--radius-md)', border: '1px solid var(--gray-200)' }}>
+                  <div>
+                    <label>Desde (mes)</label>
+                    <input type="month" value={trDesde} onChange={e => setTrDesde(e.target.value)}
+                      style={{ fontSize: 12, padding: '4px 8px', border: '1px solid var(--gray-200)', borderRadius: 6 }} />
+                  </div>
+                  <div>
+                    <label>Hasta (mes)</label>
+                    <input type="month" value={trHasta} onChange={e => setTrHasta(e.target.value)}
+                      style={{ fontSize: 12, padding: '4px 8px', border: '1px solid var(--gray-200)', borderRadius: 6 }} />
+                  </div>
+                  <button className="btn" onClick={fetchTendenciaRazones}>Aplicar</button>
+                  <button className="btn-ghost" onClick={() => { setTrDesde(''); setTrHasta(''); getMondayTendenciaRazones().then(tr => setTendenciaRazones(tr)).catch(() => {}) }}>Limpiar</button>
+                  {(tendenciaRazones.mes_inicio || tendenciaRazones.mes_fin) && (
+                    <span style={{ fontSize: 11, color: 'var(--gray-400)', alignSelf: 'center' }}>
+                      Período: {tendenciaRazones.mes_inicio} → {tendenciaRazones.mes_fin}
+                    </span>
+                  )}
+                </div>
+
+                <div className="two-col">
+                  <section className="panel">
+                    <h2>Solicitudes Totales por Mes</h2>
+                    <ResponsiveContainer width="100%" height={260}>
+                      <LineChart data={tendencia} margin={{ top: 8, right: 16 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--gray-100)" />
+                        <XAxis dataKey="mes" tick={{ fontSize: 11, fill: 'var(--gray-400)' }} axisLine={false} tickLine={false} />
+                        <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--gray-400)' }} axisLine={false} tickLine={false} />
+                        <Tooltip formatter={(v) => [Number(v), 'Solicitudes']} contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid var(--gray-200)' }} />
+                        <Line type="monotone" dataKey="cantidad" stroke="var(--navy-400)" strokeWidth={2.5} dot={{ r: 4, fill: 'var(--navy-400)', strokeWidth: 0 }} activeDot={{ r: 6 }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </section>
+
+                  <section className="panel">
+                    <h2>Por Razón de Modificación</h2>
+                    <ResponsiveContainer width="100%" height={260}>
+                      <LineChart data={tendenciaRazones.datos} margin={{ top: 8, right: 16 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--gray-100)" />
+                        <XAxis dataKey="mes" tick={{ fontSize: 11, fill: 'var(--gray-400)' }} axisLine={false} tickLine={false} />
+                        <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--gray-400)' }} axisLine={false} tickLine={false} />
+                        <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid var(--gray-200)' }} />
+                        <Legend iconType="circle" iconSize={8} formatter={(v) => <span style={{ fontSize: 11, color: 'var(--gray-700)' }}>{v}</span>} />
+                        {tendenciaRazones.razones.map((razon, idx) => (
+                          <Line key={razon} type="monotone" dataKey={razon} stroke={TIPO_COLORS[idx % TIPO_COLORS.length]} strokeWidth={2} dot={{ r: 4, strokeWidth: 0, fill: TIPO_COLORS[idx % TIPO_COLORS.length] }} activeDot={{ r: 6 }} />
+                        ))}
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </section>
+                </div>
+
+                {/* Tabla de variación por razón */}
+                {(tendenciaRazones.variacion ?? []).length > 0 && (() => {
+                  const cols: { key: string; label: string; align: 'left' | 'right' }[] = [
+                    { key: 'razon',         label: 'Razón',                               align: 'left'  },
+                    { key: 'count_inicio',  label: `Cant. ${tendenciaRazones.mes_inicio}`, align: 'right' },
+                    { key: 'pct_inicio',    label: '% inicio',                            align: 'right' },
+                    { key: 'count_fin',     label: `Cant. ${tendenciaRazones.mes_fin}`,    align: 'right' },
+                    { key: 'pct_fin',       label: '% fin',                               align: 'right' },
+                    { key: 'variacion_pct', label: 'Variación',                           align: 'right' },
+                  ]
+                  const sorted = [...(tendenciaRazones.variacion ?? [])].sort((a, b) => {
+                    const av = a[varSort.col], bv = b[varSort.col]
+                    if (typeof av === 'string') return av.localeCompare(bv) * varSort.dir
+                    return (av - bv) * varSort.dir
+                  })
+                  const thStyle = (key: string, align: string): React.CSSProperties => ({
+                    textAlign: align as any,
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                    color: varSort.col === key ? 'var(--navy-500)' : undefined,
+                    whiteSpace: 'nowrap',
+                  })
+                  const arrow = (key: string) => varSort.col === key ? (varSort.dir === 1 ? ' ↑' : ' ↓') : ''
+                  const handleSort = (key: string) =>
+                    setVarSort(s => s.col === key ? { col: key, dir: s.dir === 1 ? -1 : 1 } : { col: key, dir: 1 })
+
+                  return (
+                    <section className="panel">
+                      <h2>
+                        Variación por Razón de Modificación
+                        {tendenciaRazones.mes_inicio && tendenciaRazones.mes_fin && tendenciaRazones.mes_inicio !== tendenciaRazones.mes_fin && (
+                          <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 400, color: 'var(--gray-400)' }}>
+                            {tendenciaRazones.mes_inicio} → {tendenciaRazones.mes_fin}
+                          </span>
+                        )}
+                      </h2>
+                      <div className="scroll-x">
+                        <table className="data-table">
+                          <thead>
+                            <tr>
+                              {cols.map(c => (
+                                <th key={c.key} style={thStyle(c.key, c.align)} onClick={() => handleSort(c.key)}>
+                                  {c.label}{arrow(c.key)}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sorted.map((row: any) => {
+                              const v = row.variacion_pct as number
+                              const isEqual = tendenciaRazones.mes_inicio === tendenciaRazones.mes_fin
+                              const varColor = isEqual ? 'var(--gray-400)' : v > 0 ? 'var(--error-500)' : v < 0 ? 'var(--success-500)' : 'var(--gray-400)'
+                              const varLabel = isEqual ? '—' : v > 0 ? `+${v}%` : `${v}%`
+                              return (
+                                <tr key={row.razon}>
+                                  <td style={{ fontWeight: 600 }}>{row.razon}</td>
+                                  <td style={{ textAlign: 'right' }}>{row.count_inicio}</td>
+                                  <td style={{ textAlign: 'right', color: 'var(--gray-500)', fontSize: 11 }}>{row.pct_inicio}%</td>
+                                  <td style={{ textAlign: 'right' }}>{row.count_fin}</td>
+                                  <td style={{ textAlign: 'right', color: 'var(--gray-500)', fontSize: 11 }}>{row.pct_fin}%</td>
+                                  <td style={{ textAlign: 'right', fontWeight: 700, color: varColor }}>{varLabel}</td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </section>
+                  )
+                })()}
+              </>
             )}
           </div>
         </>

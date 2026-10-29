@@ -64,7 +64,9 @@ export const getEstadoProyectosTimeline   = (p?: object) => api.get('/estado-pro
 export const getMetrosPai               = (ano?: number, version?: string) => api.get('/metros/pai', { params: { ano, version } }).then(r => r.data)
 export const getMetrosPaiVersiones      = () => api.get('/metros/pai/versiones').then(r => r.data)
 export const getMetrosAvance            = () => api.get('/metros/avance').then(r => r.data)
-export const getPresupuestoPerforacion  = () => api.get('/metros/presupuesto-perforacion').then(r => r.data)
+export const getPresupuestoAnos         = () => api.get('/metros/presupuesto-anos').then(r => r.data)
+export const getPresupuestoPerforacion  = (ano?: number) => api.get('/metros/presupuesto-perforacion', { params: { ano } }).then(r => r.data)
+export const getCurvaS                  = (tipo = 'all', ano?: number) => api.get('/metros/curva-s', { params: { tipo, ano } }).then(r => r.data)
 
 export const getDpoProyectosInicio  = (fechaDesde?: string, fechaHasta?: string) =>
   api.get('/dpo/proyectos-inicio', {
@@ -101,7 +103,8 @@ export const getLicitGestionDetalle      = (p?: object) => api.get('/licitacione
 export const getMondayKpis      = ()           => api.get('/monday/kpis').then(r => r.data)
 export const getMondayTabla     = (p: object)  => api.get('/monday/tabla', { params: p }).then(r => r.data)
 export const getMondayFiltros   = ()           => api.get('/monday/filtros').then(r => r.data)
-export const getMondayTendencia = ()           => api.get('/monday/tendencia').then(r => r.data)
+export const getMondayTendencia      = () => api.get('/monday/tendencia').then(r => r.data)
+export const getMondayTendenciaRazones = (p?: object) => api.get('/monday/tendencia-razones', { params: p }).then(r => r.data)
 
 export const getSimulacionLista       = ()              => api.get('/simulacion/lista').then(r => r.data)
 export const getSimulacionProyectos   = ()              => api.get('/simulacion/datos/proyectos').then(r => r.data)

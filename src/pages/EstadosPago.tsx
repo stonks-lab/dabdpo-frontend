@@ -51,9 +51,10 @@ const TL_STICKY: { label: string; left: number; minW: number; align: 'left' | 'r
   { label: '',            left: 0,   minW: 28,  align: 'left'  },
   { label: 'Contrato',    left: 28,  minW: 84,  align: 'left'  },
   { label: 'Descripción', left: 112, minW: 155, align: 'left'  },
-  { label: 'Área',        left: 267, minW: 75,  align: 'left'  },
-  { label: 'Total EP',    left: 342, minW: 86,  align: 'right' },
-  { label: 'N° EPs',      left: 428, minW: 60,  align: 'right' },
+  { label: 'Proveedor',   left: 267, minW: 130, align: 'left'  },
+  { label: 'Área',        left: 397, minW: 75,  align: 'left'  },
+  { label: 'Total EP',    left: 472, minW: 86,  align: 'right' },
+  { label: 'N° EPs',      left: 558, minW: 60,  align: 'right' },
 ]
 
 const makeContractTick = (lookup: Record<string, string>) =>
@@ -175,22 +176,22 @@ export default function EstadosPago() {
   const exportEP = () => {
     if (!timeline) return
     const monthCols = timeline.meses as string[]
-    const headers = ['Contrato', 'Proyecto', 'Descripción contrato', 'Área', 'Total EP', 'N° EPs', ...monthCols.map(fmtMes)]
+    const headers = ['Contrato', 'Proveedor', 'Proyecto', 'Descripción contrato', 'Área', 'Total EP', 'N° EPs', ...monthCols.map(fmtMes)]
     const rows: any[][] = []
     for (const ctt of timeline.contratos) {
       const proyectos: any[] = ctt.proyectos ?? []
       if (proyectos.length === 0) {
-        rows.push([ctt.codigo_ctt, '', ctt.descripcion, ctt.area, ctt.total_ep, ctt.num_eps, ...ctt.eps])
+        rows.push([ctt.codigo_ctt, ctt.proveedor ?? '', '', ctt.descripcion, ctt.area, ctt.total_ep, ctt.num_eps, ...ctt.eps])
       } else {
         for (const pr of proyectos) {
-          rows.push([ctt.codigo_ctt, pr.proyecto, ctt.descripcion, ctt.area, pr.total_ep, pr.num_eps, ...pr.eps])
+          rows.push([ctt.codigo_ctt, ctt.proveedor ?? '', pr.proyecto, ctt.descripcion, ctt.area, pr.total_ep, pr.num_eps, ...pr.eps])
         }
       }
     }
     const wb = XLSX.utils.book_new()
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows])
     ws['!cols'] = [
-      { wch: 14 }, { wch: 40 }, { wch: 40 }, { wch: 14 }, { wch: 14 }, { wch: 8 },
+      { wch: 14 }, { wch: 32 }, { wch: 40 }, { wch: 40 }, { wch: 14 }, { wch: 14 }, { wch: 8 },
       ...monthCols.map(() => ({ wch: 10 })),
     ]
     XLSX.utils.book_append_sheet(wb, ws, 'EP por Proyecto')
@@ -371,13 +372,16 @@ export default function EstadosPago() {
                           <td style={{ position: 'sticky', left: 112, zIndex: 2, background: '#fff', padding: '5px 8px', maxWidth: 155, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', borderBottom: bd }} title={ctt.descripcion}>
                             {ctt.descripcion}
                           </td>
-                          <td style={{ position: 'sticky', left: 267, zIndex: 2, background: '#fff', padding: '5px 8px', fontSize: 10, color: '#9aa1b3', borderBottom: bd }}>
+                          <td style={{ position: 'sticky', left: 267, zIndex: 2, background: '#fff', padding: '5px 8px', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 10, color: '#374151', borderBottom: bd }} title={ctt.proveedor}>
+                            {ctt.proveedor || '—'}
+                          </td>
+                          <td style={{ position: 'sticky', left: 397, zIndex: 2, background: '#fff', padding: '5px 8px', fontSize: 10, color: '#9aa1b3', borderBottom: bd }}>
                             {ctt.area}
                           </td>
-                          <td style={{ position: 'sticky', left: 342, zIndex: 2, background: '#fff', padding: '5px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600, borderBottom: bd }}>
+                          <td style={{ position: 'sticky', left: 472, zIndex: 2, background: '#fff', padding: '5px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 600, borderBottom: bd }}>
                             {fmtMM(ctt.total_ep)}
                           </td>
-                          <td style={{ position: 'sticky', left: 428, zIndex: 2, background: '#fff', padding: '5px 8px', textAlign: 'right', boxShadow: '3px 0 6px rgba(0,0,0,.07)', borderBottom: bd }}>
+                          <td style={{ position: 'sticky', left: 558, zIndex: 2, background: '#fff', padding: '5px 8px', textAlign: 'right', boxShadow: '3px 0 6px rgba(0,0,0,.07)', borderBottom: bd }}>
                             {ctt.num_eps}
                           </td>
                           {timeline.meses.map((m: string, mi: number) => {
@@ -413,10 +417,11 @@ export default function EstadosPago() {
                                   {pr.proyecto || '(sin proyecto)'}
                                 </td>
                                 <td style={{ position: 'sticky', left: 267, zIndex: 2, background: bgP, borderBottom: bd }} />
-                                <td style={{ position: 'sticky', left: 342, zIndex: 2, background: bgP, padding: '4px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 10, color: '#1e3a5f', fontWeight: 600, borderBottom: bd }}>
+                                <td style={{ position: 'sticky', left: 397, zIndex: 2, background: bgP, borderBottom: bd }} />
+                                <td style={{ position: 'sticky', left: 472, zIndex: 2, background: bgP, padding: '4px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 10, color: '#1e3a5f', fontWeight: 600, borderBottom: bd }}>
                                   {fmtMM(pr.total_ep)}
                                 </td>
-                                <td style={{ position: 'sticky', left: 428, zIndex: 2, background: bgP, padding: '4px 8px', textAlign: 'right', fontSize: 10, color: '#9aa1b3', boxShadow: '3px 0 6px rgba(0,0,0,.05)', borderBottom: bd }}>
+                                <td style={{ position: 'sticky', left: 558, zIndex: 2, background: bgP, padding: '4px 8px', textAlign: 'right', fontSize: 10, color: '#9aa1b3', boxShadow: '3px 0 6px rgba(0,0,0,.05)', borderBottom: bd }}>
                                   {pr.num_eps}
                                 </td>
                                 {timeline.meses.map((m: string, mi: number) => {
@@ -444,10 +449,11 @@ export default function EstadosPago() {
                                       {desc.descripcion || '—'}
                                     </td>
                                     <td style={{ position: 'sticky', left: 267, zIndex: 2, background: bgD, borderBottom: bd }} />
-                                    <td style={{ position: 'sticky', left: 342, zIndex: 2, background: bgD, padding: '3px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 10, color: '#374151', borderBottom: bd }}>
+                                    <td style={{ position: 'sticky', left: 397, zIndex: 2, background: bgD, borderBottom: bd }} />
+                                    <td style={{ position: 'sticky', left: 472, zIndex: 2, background: bgD, padding: '3px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 10, color: '#374151', borderBottom: bd }}>
                                       {fmtMM(desc.total_ep)}
                                     </td>
-                                    <td style={{ position: 'sticky', left: 428, zIndex: 2, background: bgD, padding: '3px 8px', textAlign: 'right', fontSize: 10, color: '#9aa1b3', boxShadow: '3px 0 6px rgba(0,0,0,.04)', borderBottom: bd }}>
+                                    <td style={{ position: 'sticky', left: 558, zIndex: 2, background: bgD, padding: '3px 8px', textAlign: 'right', fontSize: 10, color: '#9aa1b3', boxShadow: '3px 0 6px rgba(0,0,0,.04)', borderBottom: bd }}>
                                       {desc.num_eps}
                                     </td>
                                     {timeline.meses.map((m: string, mi: number) => {
@@ -589,6 +595,7 @@ export default function EstadosPago() {
                 <thead>
                   <tr style={{ background: '#1e3a5f', color: '#fff' }}>
                     <th style={{ padding: '7px 8px', textAlign: 'left', whiteSpace: 'nowrap' }}>Contrato</th>
+                    <th style={{ padding: '7px 8px', textAlign: 'left', minWidth: 160 }}>Proveedor</th>
                     <th style={{ padding: '7px 8px', textAlign: 'left', minWidth: 180 }}>Proyecto</th>
                     <th style={{ padding: '7px 8px', textAlign: 'left', minWidth: 180 }}>Descripción contrato</th>
                     <th style={{ padding: '7px 8px', textAlign: 'left', whiteSpace: 'nowrap' }}>Área</th>
@@ -615,6 +622,7 @@ export default function EstadosPago() {
                       return [(
                         <tr key={ctt.codigo_ctt} style={{ background: rowsBg }}>
                           <td style={{ padding: '5px 8px', fontFamily: 'monospace', fontWeight: 700, fontSize: 10, borderBottom: bd, whiteSpace: 'nowrap' }}>{ctt.codigo_ctt}</td>
+                          <td style={{ padding: '5px 8px', fontSize: 10, color: '#374151', borderBottom: bd, whiteSpace: 'nowrap', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis' }} title={ctt.proveedor}>{ctt.proveedor || '—'}</td>
                           <td style={{ padding: '5px 8px', fontSize: 10, color: '#9aa1b3', borderBottom: bd }}>—</td>
                           <td style={{ padding: '5px 8px', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', borderBottom: bd }} title={ctt.descripcion}>{ctt.descripcion}</td>
                           <td style={{ padding: '5px 8px', fontSize: 10, color: '#6b7280', borderBottom: bd, whiteSpace: 'nowrap' }}>{ctt.area}</td>
@@ -636,6 +644,7 @@ export default function EstadosPago() {
                     return proyectos.map((pr: any, pi: number) => (
                       <tr key={`${ctt.codigo_ctt}__${pi}`} style={{ background: rowsBg }}>
                         <td style={{ padding: '5px 8px', fontFamily: 'monospace', fontWeight: 700, fontSize: 10, borderBottom: bd, whiteSpace: 'nowrap', color: pi === 0 ? '#1e3a5f' : '#6b7280' }}>{ctt.codigo_ctt}</td>
+                        <td style={{ padding: '5px 8px', fontSize: 10, color: '#374151', borderBottom: bd, whiteSpace: 'nowrap', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis' }} title={ctt.proveedor}>{pi === 0 ? (ctt.proveedor || '—') : ''}</td>
                         <td style={{ padding: '5px 8px', fontSize: 10, color: '#374151', fontWeight: 500, borderBottom: bd, whiteSpace: 'nowrap', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }} title={pr.proyecto}>{pr.proyecto || '—'}</td>
                         <td style={{ padding: '5px 8px', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', borderBottom: bd, color: '#9aa1b3', fontSize: 10 }} title={ctt.descripcion}>{pi === 0 ? ctt.descripcion : ''}</td>
                         <td style={{ padding: '5px 8px', fontSize: 10, color: '#6b7280', borderBottom: bd, whiteSpace: 'nowrap' }}>{pi === 0 ? ctt.area : ''}</td>

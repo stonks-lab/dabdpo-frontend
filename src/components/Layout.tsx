@@ -82,6 +82,30 @@ const IconDashboard = () => (
     <polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>
   </svg>
 )
+const IconCpu = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/>
+    <line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/>
+    <line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/>
+    <line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/>
+    <line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/>
+  </svg>
+)
+const IconTarget = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>
+  </svg>
+)
+const IconTent = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3.5 21L12 3l8.5 18"/><path d="M12 3L7 21"/><path d="M12 3l5 18"/>
+  </svg>
+)
+const IconMountain = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M8 3l4 8 5-5 5 15H2L8 3z"/>
+  </svg>
+)
 const IconClock = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="10"/>
@@ -110,6 +134,10 @@ const NAV: Entry[] = [
   { to: '/estado-proyectos', label: 'Estado Proyectos',  icon: <IconWarning /> },
   { to: '/metros',                    label: 'Metros Perforados',      icon: <IconDrill /> },
   { to: '/presupuesto-perforacion',  label: 'Presupuesto Perforación', icon: <IconDrill /> },
+  { section: 'Modelos Productivos' },
+  { to: '/modelos/sondajes',         label: 'Sondajes',                icon: <IconTarget /> },
+  { to: '/modelos/campamento',       label: 'Campamento',              icon: <IconTent /> },
+  { to: '/modelos/mt',               label: 'Mov. de Tierra',          icon: <IconMountain /> },
   { section: 'DAB' },
   { to: '/alertas',                  label: 'Alertas',                 icon: <IconBell /> },
   { to: '/licitaciones',   label: 'Licitaciones',    icon: <IconList /> },
