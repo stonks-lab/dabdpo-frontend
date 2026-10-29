@@ -1,6 +1,9 @@
 import axios from 'axios'
 
-const api = axios.create({ baseURL: '/api' })
+const api = axios.create({
+  baseURL: '/api',
+  paramsSerializer: { indexes: null },  // arrays como clave repetida: arr=a&arr=b (formato FastAPI)
+})
 
 export const getHomeKpis    = (p?: object) => api.get('/home/kpis',        { params: p }).then(r => r.data)
 export const getHomeFiltros = ()           => api.get('/home/filtros').then(r => r.data)
@@ -22,9 +25,10 @@ export const getLicitProcesos    = (p?: object) => api.get('/licitaciones/proces
 export const getLicitProcesoDetalle  = (proceso: string) => api.get('/licitaciones/procesos/detalle', { params: { proceso } }).then(r => r.data)
 export const getLicitAllSubelementos = ()                => api.get('/licitaciones/procesos/subelementos').then(r => r.data)
 
-export const getAlertasKpis   = ()      => api.get('/alertas/kpis').then(r => r.data)
-export const getAlertasContratos = ()   => api.get('/alertas/contratos').then(r => r.data)
-export const getAlertasBoletas   = (p?: object) => api.get('/alertas/boletas', { params: p }).then(r => r.data)
+export const getAlertasKpis      = ()           => api.get('/alertas/kpis').then(r => r.data)
+export const getAlertasFiltros   = ()           => api.get('/alertas/filtros').then(r => r.data)
+export const getAlertasContratos = (p?: object) => api.get('/alertas/contratos', { params: p }).then(r => r.data)
+export const getAlertasBoletas   = (p?: object) => api.get('/alertas/boletas',   { params: p }).then(r => r.data)
 
 export const getAnalisisKpis          = ()            => api.get('/analisis/kpis').then(r => r.data)
 export const getAnalisisPorProyecto   = ()            => api.get('/analisis/por-proyecto').then(r => r.data)
@@ -138,6 +142,25 @@ export const uploadIncidencias = (file: File, usuario = '') => {
     params: { usuario },
   }).then(r => r.data)
 }
+
+export const getKpiMaquinas   = ()                    => api.get('/kpi-contratos/maquinas').then(r => r.data)
+export const getKpiProyectos  = ()                    => api.get('/kpi-contratos/proyectos').then(r => r.data)
+export const getKpiHoleIds    = (proyectos?: string[]) =>
+  api.get('/kpi-contratos/holeids', { params: { proyectos: proyectos?.length ? proyectos : undefined } }).then(r => r.data)
+
+export const getKpiDisponibilidad = (
+  fechaDesde?: string, fechaHasta?: string,
+  maquinas?: string[], proyectos?: string[], holeids?: string[],
+) =>
+  api.get('/kpi-contratos/disponibilidad', {
+    params: {
+      fecha_desde: fechaDesde  || undefined,
+      fecha_hasta: fechaHasta  || undefined,
+      maquinas:    maquinas?.length  ? maquinas  : undefined,
+      proyectos:   proyectos?.length ? proyectos : undefined,
+      holeids:     holeids?.length   ? holeids   : undefined,
+    },
+  }).then(r => r.data)
 
 export const uploadProyectosInicio = (file: File, usuario = '') => {
   const form = new FormData()

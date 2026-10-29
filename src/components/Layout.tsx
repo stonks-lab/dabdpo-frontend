@@ -112,6 +112,12 @@ const IconClock = () => (
     <polyline points="12 6 12 12 16 14"/>
   </svg>
 )
+const IconBarChart = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/>
+    <line x1="6" y1="20" x2="6" y2="14"/><line x1="2" y1="20" x2="22" y2="20"/>
+  </svg>
+)
 const IconReceipt = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1z"/>
@@ -143,6 +149,7 @@ const NAV: Entry[] = [
   { to: '/licitaciones',   label: 'Licitaciones',    icon: <IconList /> },
   { to: '/solpes',         label: 'SOLPEs',          icon: <IconList /> },
   { to: '/dashboard-dab',  label: 'Dashboard DAB',   icon: <IconClock /> },
+  { to: '/kpi-contratos',  label: 'KPI Contratos',   icon: <IconBarChart /> },
   { to: '/modificaciones', label: 'Modificaciones',  icon: <IconMonday /> },
   { section: 'DPO' },
   { to: '/dashboard-dpo',  label: 'Dashboard DPO',   icon: <IconDashboard /> },

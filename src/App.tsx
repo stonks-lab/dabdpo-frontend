@@ -18,6 +18,7 @@ import DashboardDPO from './pages/DashboardDPO'
 import SolpeTiempos from './pages/SolpeTiempos'
 import Simulacion from './pages/Simulacion'
 import EstadosPago from './pages/EstadosPago'
+import KpiContratos from './pages/KpiContratos'
 import ModelosSondajes from './pages/ModelosSondajes'
 import ModelosCampamento from './pages/ModelosCampamento'
 import ModelosMT from './pages/ModelosMT'
@@ -44,6 +45,7 @@ export default function App() {
           <Route path="modificaciones"    element={<Modificaciones />} />
           <Route path="dashboard-dpo"     element={<DashboardDPO />} />
           <Route path="dashboard-dab"          element={<SolpeTiempos />} />
+          <Route path="kpi-contratos"           element={<KpiContratos />} />
           <Route path="modelos/sondajes"     element={<ModelosSondajes />} />
           <Route path="modelos/campamento"   element={<ModelosCampamento />} />
           <Route path="modelos/mt"           element={<ModelosMT />} />
